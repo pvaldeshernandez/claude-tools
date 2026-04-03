@@ -1,0 +1,69 @@
+# Scientific Writer — Collaborator Database
+# Add new collaborators as needed. The skill computes affiliation numbering per document.
+#
+# Core team (very likely on every paper):
+#   - montesino-goicolea (Soamy)
+#   - valdes-hernandez (Pedro)
+#   - cruz-almeida (Yenisel)
+#
+# Other collaborators are project-specific — do not assume they are on every paper.
+
+collaborators:
+  montesino-goicolea:
+    display: "S. Montesino-Goicolea"
+    affiliations:
+      - "Department of Community Dentistry and Behavioral Science, College of Dentistry, University of Florida, Gainesville, FL, USA"
+      - "Pain Research and Intervention Center of Excellence (PRICE), University of Florida, Gainesville, FL, USA"
+      - "McKnight Brain Institute, University of Florida, Gainesville, FL, USA"
+
+  valdes-hernandez:
+    display: "P.A. Valdes-Hernandez"
+    affiliations:
+      - "Pain Research and Intervention Center of Excellence (PRICE), University of Florida, Gainesville, FL, USA"
+      - "Department of Health Outcomes and Biomedical Informatics, College of Medicine, University of Florida, Gainesville, FL, USA"
+      - "McKnight Brain Institute, University of Florida, Gainesville, FL, USA"
+
+  li-xiaohan:
+    display: "X. Li"
+    affiliations:
+      - "Department of Health Outcomes and Biomedical Informatics, College of Medicine, University of Florida, Gainesville, FL, USA"
+
+  lipat:
+    display: "A.L. Lipat"
+    affiliations:
+      - "College of Nursing, University of Central Florida, Orlando, FL, USA"
+
+  coombes:
+    display: "S.A. Coombes"
+    affiliations:
+      - "Department of Applied Physiology and Kinesiology, College of Health and Human Performance, University of Florida, Gainesville, FL, USA"
+      - "McKnight Brain Institute, University of Florida, Gainesville, FL, USA"
+
+  liang:
+    display: "Y. Liang"
+    affiliations:
+      - "Department of Biomedical Engineering, University of Florida, Gainesville, FL, USA"
+
+  ding:
+    display: "M. Ding"
+    affiliations:
+      - "Department of Biomedical Engineering, University of Florida, Gainesville, FL, USA"
+
+  neubert:
+    display: "J.K. Neubert"
+    affiliations:
+      - "Department of Biomedical Sciences, College of Dentistry, Texas A&M University, Dallas, TX, USA"
+
+  fillingim:
+    display: "R.B. Fillingim"
+    affiliations:
+      - "Department of Community Dentistry and Behavioral Science, College of Dentistry, University of Florida, Gainesville, FL, USA"
+      - "Pain Research and Intervention Center of Excellence (PRICE), University of Florida, Gainesville, FL, USA"
+
+  cruz-almeida:
+    display: "Y. Cruz-Almeida"
+    affiliations:
+      - "Department of Community Dentistry and Behavioral Science, College of Dentistry, University of Florida, Gainesville, FL, USA"
+      - "Pain Research and Intervention Center of Excellence (PRICE), University of Florida, Gainesville, FL, USA"
+      - "Department of Neuroscience, College of Medicine, University of Florida, Gainesville, FL, USA"
+      - "McKnight Brain Institute, University of Florida, Gainesville, FL, USA"

@@ -1,0 +1,57 @@
+name: "Cephalalgia"
+type: manuscript
+font: Times New Roman
+font_size: 12
+alignment: left
+line_spacing: double
+margins:
+  left: 3cm
+  right: 3cm
+  top: 5cm
+  bottom: 5cm
+word_limit: 4500
+sections:
+  - Introduction
+  - Methods
+  - Results
+  - Discussion
+section_limits: null
+abstract_word_limit: 400
+abstract_format: structured
+abstract_sections:
+  - Aim
+  - Methods
+  - Results
+  - Conclusion
+abstract_notes: >
+  Structured abstract up to 400 words. Sections: Aim, Methods, Results,
+  Conclusion. No references or abbreviations in abstract. The second page
+  of the manuscript must contain only the abstract.
+citation_style: vancouver-superscript
+reference_format: >
+  Sequential numbered references in superscript in order of first appearance.
+  Reference list ordered sequentially (not alphabetically).
+  Format: Author(s). Title. Journal Abbrev Year; Volume: Pages.
+  List all authors up to 3; for 4+, list first 3 followed by "et al."
+  Journal names abbreviated per Index Medicus/NLM.
+reference_limit: 45
+highlights:
+  required: true
+  count: "2-5"
+  total_word_limit: 60
+  position: "after conclusion, before references"
+  notes: >
+    Two to five bullet points (60 words total) summarizing the highlights
+    of the research. Appears at the end of the manuscript following the
+    conclusion and prior to the reference list.
+word_count_scope: "main text only (Introduction through Discussion, excluding abstract, references, tables, figure legends)"
+figures_tables:
+  limit: "6-8 (no strict upper limit)"
+  notes: "Articles should be liberally illustrated with figures and diagrams (colour encouraged)."
+notes: >
+  Official journal of the International Headache Society (IHS).
+  Published by SAGE. Follows ICMJE recommendations.
+  Double-spaced throughout. Minimum 3cm left/right margins, 5cm top/bottom.
+  Figures/tables uploaded as separate files, not embedded.
+  Figure legends remain in main body file.
+  Graphical abstracts encouraged.

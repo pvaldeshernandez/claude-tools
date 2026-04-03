@@ -1,0 +1,21 @@
+name: "IASP 2026 World Congress"
+type: abstract
+font: Calibri
+font_size: 12
+author_font_size: 11
+affiliation_font_size: 9
+alignment: justify
+space_before: 6
+space_after: 6
+word_limit: 400
+sections:
+  - Background
+  - Methods
+  - Results
+  - Discussion
+citation_style: none
+notes: >
+  No references in abstract body. Inline equations encouraged
+  (use Unicode math symbols). Title centered and bold.
+  Affiliations centered, italic, 9pt with superscript numbers.
+  Word limit excludes title, authors, and affiliations.

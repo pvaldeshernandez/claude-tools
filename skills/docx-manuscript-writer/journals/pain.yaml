@@ -1,0 +1,32 @@
+name: "Pain"
+type: manuscript
+font: Arial
+font_size: 12
+alignment: left
+line_spacing: double
+margins: 1in
+word_limit: null
+sections:
+  - Introduction
+  - Methods
+  - Results
+  - Discussion
+section_limits:
+  Introduction: 500
+  Discussion: 1500
+abstract_word_limit: 250
+abstract_format: unstructured
+abstract_notes: >
+  Unstructured (no labeled sections). Maximum 250 words.
+  Must have a mandatory primary heading.
+citation_style: vancouver-numbered
+reference_format: >
+  Modified Vancouver/AMA style. Superscript Arabic numbers in text
+  corresponding to alphabetized numbered reference list. Follows
+  AMA Manual of Style (10th edition).
+notes: >
+  Patterned after AMA Manual of Style (10th edition).
+  Preferred fonts: Arial, Helvetica, Times New Roman, Times, Symbol, Courier.
+  Double-spaced throughout. All pages numbered. Submit as .docx or .doc.
+  Introduction max 500 words. Discussion + Conclusion max 1500 words.
+  Stedman's Medical Dictionary (27th ed) for terminology.

@@ -1,0 +1,32 @@
+name: "The Journal of Pain"
+type: manuscript
+font: "Times New Roman"
+font_size: 12
+alignment: justify
+line_spacing: double
+margins: 1in
+first_line_indent: 0.1
+word_limit: null
+caption_font_size: 10
+table_font_size: 11
+sections:
+  - Introduction
+  - Materials and Methods
+  - Results
+  - Discussion
+abstract_word_limit: 250
+abstract_format: unstructured
+abstract_notes: >
+  Unstructured single paragraph (no subheadings). Must include a
+  "Perspective" statement (max 50 words) at the end explaining
+  clinical relevance. No references in abstract. For clinical trials,
+  include registration info at end of abstract.
+citation_style: numbered-inline
+reference_format: >
+  Numbered list, alphabetized. All authors listed (no et al.).
+  Journal abbreviations per Index Medicus/NLM. DOI encouraged.
+  Format: Author(s). Title. Journal Abbrev. Year;Volume:Pages. doi:
+notes: >
+  Preferred fonts: Arial, Helvetica, Times New Roman, Times, Symbol, Courier.
+  Double-spaced throughout. Page numbers on all pages.
+  Requires structured Perspective section (50 words) after abstract.
