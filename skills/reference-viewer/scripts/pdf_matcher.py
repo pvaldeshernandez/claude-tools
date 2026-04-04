@@ -17,7 +17,9 @@ import fitz  # pymupdf
 # Constants
 # ---------------------------------------------------------------------------
 
+# Vancouver: "01_Author-Title.pdf"  APA: "Author-2020-Title.pdf"
 _ALREADY_NAMED_RE = re.compile(r"^(\d+)_.*\.pdf$", re.IGNORECASE)
+_APA_NAMED_RE = re.compile(r"^([A-Za-z\-']+)-(\d{4})-.*\.pdf$", re.IGNORECASE)
 _DOI_RE = re.compile(r"(10\.\d{4,9}/[^\s]+)")
 _BOILERPLATE_UPPER = {
     "ORIGINAL ARTICLE",
@@ -79,6 +81,25 @@ def _scan_already_named(literature_dir: Path) -> dict:
         if m:
             num = int(m.group(1))
             result[num] = p
+    return result
+
+
+def _scan_already_named_apa(literature_dir: Path, references: dict) -> dict:
+    """Return {cite_key: Path} for PDFs already named ``Author-Year-Title.pdf``.
+
+    Matches by checking if the filename's author+year correspond to a reference.
+    """
+    result = {}
+    for p in literature_dir.glob("*.pdf"):
+        m = _APA_NAMED_RE.match(p.name)
+        if m:
+            file_author = m.group(1).lower()
+            file_year = int(m.group(2))
+            for key, ref in references.items():
+                ref_author = _make_author_last(ref.get("authors", "")).lower()
+                if ref_author == file_author and ref.get("year") == file_year:
+                    result[key] = p
+                    break
     return result
 
 
@@ -162,23 +183,32 @@ def _make_author_last(authors_str: str) -> str:
     return "Unknown"
 
 
-def _rename_pdf(old_path: Path, ref_num: int, references: dict) -> Path:
-    """Rename a PDF to ``<N>_<AuthorLastName>-<ShortTitle>.pdf``.
+def _rename_pdf(old_path: Path, ref_key, references: dict, style: str = "vancouver") -> Path:
+    """Rename a PDF based on citation style.
+
+    Vancouver: ``<N>_<AuthorLastName>-<ShortTitle>.pdf``
+    APA:       ``<AuthorLastName>-<Year>-<ShortTitle>.pdf``
 
     Returns the new path.
     """
-    ref = references[ref_num]
+    ref = references[ref_key]
     author = _make_author_last(ref.get("authors", "Unknown"))
     short_title = _make_short_title(ref.get("title", ""))
-    new_name = f"{ref_num}_{author}-{short_title}.pdf"
+    year = ref.get("year", "")
+
+    if style == "apa":
+        new_name = f"{author}-{year}-{short_title}.pdf"
+    else:
+        new_name = f"{ref_key}_{author}-{short_title}.pdf"
+
     new_path = old_path.parent / new_name
     if new_path == old_path:
         return old_path
     # Avoid overwriting an existing file
     if new_path.exists():
-        slug = new_path.stem.split(f"{ref_num}_", 1)[-1] if f"{ref_num}_" in new_path.stem else new_path.stem
+        slug = new_path.stem
         for i in range(2, 100):
-            candidate = old_path.parent / f"{ref_num}_{slug}_{i}.pdf"
+            candidate = old_path.parent / f"{slug}_{i}.pdf"
             if not candidate.exists():
                 new_path = candidate
                 break
@@ -190,15 +220,17 @@ def _rename_pdf(old_path: Path, ref_num: int, references: dict) -> Path:
 # Public API
 # ---------------------------------------------------------------------------
 
-def match_and_rename(literature_dir, references):
+def match_and_rename(literature_dir, references, style="vancouver"):
     """Match PDFs to manuscript references and rename them.
 
     Args:
         literature_dir: Path (or str) to folder containing PDFs.
-        references: dict ``{ref_num(int): {ref, doi, title, authors, year, journal}}``.
+        references: dict ``{ref_key: {ref, doi, title, authors, year, journal}}``.
+            Keys are int (Vancouver) or str cite_keys (APA).
+        style: 'vancouver' or 'apa'. Controls naming convention.
 
     Returns:
-        matched: dict ``{ref_num: Path}`` -- matched PDFs (after rename).
+        matched: dict ``{ref_key: Path}`` -- matched PDFs (after rename).
         unmatched: list of ``{path, extracted_title, extracted_doi}`` -- couldn't match.
         warnings: list of str -- issues encountered.
     """
@@ -212,15 +244,19 @@ def match_and_rename(literature_dir, references):
         return matched, unmatched, warnings
 
     # ------------------------------------------------------------------
-    # Step 1: Pick up files that are already named with N_ prefix
+    # Step 1: Pick up files that are already named
+    # Vancouver: N_Author-Title.pdf    APA: Author-Year-Title.pdf
     # ------------------------------------------------------------------
-    already = _scan_already_named(literature_dir)
-    for num, path in already.items():
-        if num in references:
-            matched[num] = path
+    if style == "apa":
+        already = _scan_already_named_apa(literature_dir, references)
+    else:
+        already = _scan_already_named(literature_dir)
+    for key, path in already.items():
+        if key in references:
+            matched[key] = path
         else:
             warnings.append(
-                f"File '{path.name}' has prefix {num}_ but no reference #{num} exists"
+                f"File '{path.name}' matches naming convention but no reference '{key}' exists"
             )
 
     matched_nums = set(matched.keys())
@@ -292,7 +328,7 @@ def match_and_rename(literature_dir, references):
                         break
 
         if ref_num is not None:
-            new_path = _rename_pdf(pdf_path, ref_num, references)
+            new_path = _rename_pdf(pdf_path, ref_num, references, style=style)
             matched[ref_num] = new_path
             matched_nums.add(ref_num)
         else:
