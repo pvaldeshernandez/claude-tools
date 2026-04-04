@@ -224,6 +224,33 @@ def parse_references(lines):
 _CITE_RE = re.compile(r'\[([0-9,\s\u2013\u2014\-\u2010\u2011–—]+)\]')
 
 
+def _balance_dollars(text):
+    """Ensure balanced $ delimiters in a snippet by trimming truncated edges.
+
+    If the snippet starts or ends mid-LaTeX-expression (odd $ count),
+    strip from the boundary inward to the nearest $ to restore balance.
+    """
+    count = text.count('$')
+    if count == 0 or count % 2 == 0:
+        return text
+    # Odd count — one $ is orphaned from truncation
+    first = text.index('$')
+    before_first = text[:first]
+    # If text before first $ has LaTeX fragments (backslash commands),
+    # it's a truncated opening — strip up to and including that $
+    if re.search(r'\\[a-zA-Z]', before_first) or re.search(r'[a-z]{1,5}$', before_first.rstrip()):
+        text = '...' + text[first + 1:]
+    else:
+        # Last $ is the orphan — strip it
+        last = text.rindex('$')
+        text = text[:last] + text[last + 1:]
+    # Re-check: if still odd (nested truncation), strip again
+    if text.count('$') % 2 == 1:
+        # Fallback: strip all $ to prevent rendering issues
+        text = text.replace('$', '')
+    return text
+
+
 def _expand_citation(text):
     """Expand a citation body (e.g. '13–23' or '1,2') into a set of ints."""
     nums = set()
@@ -279,6 +306,8 @@ def find_citations(lines, sections):
                 snippet = '...' + snippet
             if end_char < len(line_text):
                 snippet = snippet + '...'
+            # Fix truncated LaTeX: ensure balanced $ delimiters
+            snippet = _balance_dollars(snippet)
 
             sec_name = section_at_line(sections, i)
 

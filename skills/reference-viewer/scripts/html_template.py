@@ -137,8 +137,7 @@ def generate(title: str, subtitle: str, sections: list, hierarchy: dict,
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{_escape_html(title)}</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js" onload="renderMathInElement(document.body, {{delimiters:[{{left:'$$',right:'$$',display:true}},{{left:'$',right:'$',display:false}}]}});"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #2d3748; line-height: 1.6; }}
@@ -401,6 +400,32 @@ function formatRef(refText) {{
   return refText.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
 }}
 
+function formatSnippet(text) {{
+  // Escape HTML angle brackets for safety
+  text = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Render inline LaTeX $...$ via KaTeX (balance already fixed in Python)
+  if (typeof katex !== 'undefined') {{
+    // Merge adjacent $expr$TEXT$expr$ into single expression
+    text = text.replace(/\$([^$]+)\$([A-Za-z_/]{{1,20}})\$([^$]+)\$/g, function(m, a, mid, b) {{
+      return '$' + a + '\\text{{' + mid + '}}' + b + '$';
+    }});
+    // Render display math $$...$$
+    text = text.replace(/\$\$([^$]+)\$\$/g, function(m, expr) {{
+      try {{ return katex.renderToString(expr, {{displayMode: true, throwOnError: false}}); }}
+      catch(e) {{ return m; }}
+    }});
+    // Render inline math $...$
+    text = text.replace(/\$([^$]+)\$/g, function(m, expr) {{
+      try {{ return katex.renderToString(expr, {{displayMode: false, throwOnError: false}}); }}
+      catch(e) {{ return m; }}
+    }});
+  }}
+  // Convert markdown bold **text** and italic *text*
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return text;
+}}
+
 // ---- ESCAPE HTML ----
 function escapeHtml(text) {{
   var div = document.createElement('div');
@@ -525,7 +550,7 @@ function renderCards() {{
         lineSpan.textContent = ' (line ' + c.line + ')';
         var textDiv = document.createElement('div');
         textDiv.className = 'cit-text';
-        textDiv.innerHTML = highlightCitation(c.snippet, num);
+        textDiv.innerHTML = highlightCitation(formatSnippet(c.snippet), num);
         item.appendChild(secSpan);
         item.appendChild(lineSpan);
         item.appendChild(textDiv);
@@ -763,7 +788,6 @@ function clearAllReviews() {{
   if (!confirm('Reset all review states? This cannot be undone.')) return;
   localStorage.removeItem(STORAGE_KEY);
   renderCards();
-  renderMath();
 }}
 
 // ---- SAVE/LOAD STATE ----
@@ -793,8 +817,7 @@ function loadStateFromFile(input) {{
       var data = raw.reviews || raw;  // Handle both v3 wrapper and bare dict
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       renderCards();
-      renderMath();
-      alert('State loaded successfully!');
+          alert('State loaded successfully!');
     }} catch(err) {{
       alert('Error loading state file: ' + err.message);
     }}
@@ -806,22 +829,8 @@ function autoLoadState() {{
   updateProgress();
 }}
 
-// ---- MATH RENDERING ----
-function renderMath() {{
-  if (typeof renderMathInElement === 'function') {{
-    renderMathInElement(document.getElementById('ref-container'), {{
-      delimiters: [
-        {{left: '$$', right: '$$', display: true}},
-        {{left: '$', right: '$', display: false}}
-      ],
-      throwOnError: false
-    }});
-  }}
-}}
-
 // ---- INIT ----
 renderCards();
-renderMath();
 autoLoadState();
 </script>
 </body>
