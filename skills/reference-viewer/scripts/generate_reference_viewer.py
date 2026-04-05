@@ -161,6 +161,9 @@ def parse_references(lines):
     """Extract references from the ``## References`` block.
 
     Auto-detects Vancouver (numbered) vs APA (author-date) format.
+    Tries Vancouver first on the reference list itself, falling back to APA
+    only if Vancouver yields no results. This handles manuscripts with APA
+    in-text citations but Vancouver-formatted reference lists.
 
     Returns
     -------
@@ -169,10 +172,16 @@ def parse_references(lines):
         APA: keyed by str citation key (e.g. 'Cruz-Almeida2025').
         Each value has keys: ref, doi, title, authors, year, journal, cite_key.
     """
-    style = detect_citation_style(lines)
-    if style == 'apa':
-        return _parse_references_apa(lines)
-    return _parse_references_vancouver(lines)
+    # Try Vancouver first (works for numbered ref lists regardless of body style)
+    refs = _parse_references_vancouver(lines)
+    if refs:
+        return refs
+    # Try unnumbered Vancouver (APA in-text but Vancouver ref list without numbers)
+    refs = _parse_references_unnumbered_vancouver(lines)
+    if refs:
+        return refs
+    # Fall back to APA-formatted reference list
+    return _parse_references_apa(lines)
 
 
 def _parse_references_vancouver(lines):
@@ -241,6 +250,90 @@ def _parse_references_vancouver(lines):
             'journal': journal,
             'cite_key': str(num),
         }
+    return refs
+
+
+def _parse_references_unnumbered_vancouver(lines):
+    """Parse unnumbered Vancouver-style references (one per line, no leading number).
+
+    Handles reference lists where each line is a full Vancouver entry like:
+        Smith MT, Jones AB. Title. *Journal* 2020;1:2-3. https://doi.org/...
+    Assigns sequential numbers starting from 1.
+    """
+    ref_start = _find_ref_section_start(lines)
+    if ref_start is None:
+        return {}
+
+    refs = {}
+    num = 0
+    for raw in lines[ref_start:]:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith('#'):
+            break
+        # Skip lines that don't look like references (too short, or table/note lines)
+        if len(line) < 30:
+            continue
+        # A Vancouver ref line starts with an author name (capital letter)
+        # and contains a year and typically a DOI or journal in italics
+        if not line[0].isupper():
+            continue
+        # Must contain a 4-digit year
+        year_m = _YEAR_RE.search(line)
+        if not year_m:
+            continue
+
+        num += 1
+        text = line
+
+        doi_m = _DOI_RE.search(text)
+        doi = doi_m.group(1).rstrip('.') if doi_m else None
+
+        journal_m = _JOURNAL_RE.search(text)
+        journal = journal_m.group(1) if journal_m else None
+
+        title = None
+        first_dot_space = text.find('. ')
+        if first_dot_space != -1:
+            after_authors = text[first_dot_space + 2:]
+            first_star = after_authors.find('*')
+            if first_star > 0:
+                title = after_authors[:first_star].strip().rstrip('.')
+            elif first_star == -1:
+                title = after_authors.strip().rstrip('.')
+        if title is not None and title.startswith('*'):
+            title = None
+        if title is None and journal is not None:
+            title = journal
+
+        year = None
+        for ym in _YEAR_RE.finditer(text):
+            candidate = int(ym.group(1))
+            if 1800 <= candidate <= 2100:
+                year = candidate
+                break
+
+        if first_dot_space != -1:
+            raw_authors = text[:first_dot_space]
+        else:
+            raw_authors = text
+        if ',' in raw_authors:
+            first_author = raw_authors.split(',')[0].strip()
+            authors = f'{first_author} et al.'
+        else:
+            authors = raw_authors.strip()
+
+        refs[num] = {
+            'ref': text,
+            'doi': doi,
+            'title': title,
+            'authors': authors,
+            'year': year,
+            'journal': journal,
+            'cite_key': str(num),
+        }
+
     return refs
 
 
@@ -420,6 +513,11 @@ def _build_snippet(line_text, match, sections, line_num):
 def _match_apa_cite_to_refs(author_fragment, year_str, references):
     """Match an APA citation (author fragment + year) to reference keys.
 
+    Handles letter-disambiguated years (``2022a``, ``2022b``) by matching
+    the suffix to the Nth same-author same-year entry in the reference list
+    (sorted by key).  Works for both int-keyed (Vancouver) and str-keyed
+    (APA) reference dicts.
+
     Returns a list of matching cite_keys.
     """
     year = int(year_str[:4])
@@ -431,19 +529,36 @@ def _match_apa_cite_to_refs(author_fragment, year_str, references):
         return []
     last_name = m.group(1).lower()
 
-    matches = []
+    # Collect all refs matching this author + year
+    candidates = []
     for key, ref in references.items():
         if ref.get('year') != year:
             continue
-        # Check if author last name matches
         ref_authors = (ref.get('raw_authors') or ref.get('authors', '')).lower()
         ref_last = re.match(r"([a-z\-']+)", ref_authors)
         if ref_last and ref_last.group(1) == last_name:
-            # If year suffix, check cite_key ends with it
-            if year_suffix and not str(key).endswith(year_suffix):
-                continue
-            matches.append(key)
-    return matches
+            candidates.append(key)
+
+    if not candidates:
+        return []
+
+    # Sort candidates by key so a/b/c order is stable
+    candidates.sort(key=lambda k: (k if isinstance(k, int) else str(k)))
+
+    if year_suffix:
+        # 'a' -> index 0, 'b' -> index 1, etc.
+        # First try: check if cite_key string ends with the suffix
+        for ck in candidates:
+            if str(ck).endswith(year_suffix):
+                return [ck]
+        # Fall back: use alphabetical index for int-keyed (Vancouver) refs
+        suffix_idx = ord(year_suffix[0]) - ord('a')
+        if 0 <= suffix_idx < len(candidates):
+            return [candidates[suffix_idx]]
+        return []
+
+    # No suffix: return all candidates (or single if only one)
+    return candidates
 
 
 def find_citations(lines, sections, references=None):
@@ -451,6 +566,10 @@ def find_citations(lines, sections, references=None):
 
     Auto-detects Vancouver vs APA based on citation style.
     For APA, *references* dict is needed to match citations to keys.
+
+    In Vancouver mode, also scans for inline author-date mentions
+    (e.g. ``Smith et al. (2020)``) and matches them to references,
+    so manually typed citations are not missed.
 
     Returns
     -------
@@ -461,7 +580,21 @@ def find_citations(lines, sections, references=None):
     style = detect_citation_style(lines)
     if style == 'apa' and references is not None:
         return _find_citations_apa(lines, sections, references)
-    return _find_citations_vancouver(lines, sections)
+
+    citations = _find_citations_vancouver(lines, sections)
+
+    # Also pick up inline author-date mentions in Vancouver mode
+    if references:
+        apa_cites = _find_citations_apa(lines, sections, references)
+        for key, instances in apa_cites.items():
+            for inst in instances:
+                # Deduplicate: skip if same ref on same line already found
+                existing = citations.get(key, [])
+                if any(e['line'] == inst['line'] for e in existing):
+                    continue
+                citations.setdefault(key, []).append(inst)
+
+    return citations
 
 
 def _find_citations_vancouver(lines, sections):
@@ -525,24 +658,27 @@ def _find_citations_apa(lines, sections, references):
             # Split on semicolons for multiple citations
             for part in inner.split(';'):
                 part = part.strip()
-                # Extract author and year from each part
-                year_m = re.search(r'(\d{4}[a-z]?)\s*$', part)
-                if not year_m:
+                # Handle compressed years: "Author et al., 2025, 2024, 2023"
+                # Find ALL years in this part, then extract the author from
+                # the text before the first year.
+                all_years = list(re.finditer(r'(\d{4}[a-z]?)', part))
+                if not all_years:
                     continue
-                author_part = part[:year_m.start()].rstrip(',').strip()
-                matched_keys = _match_apa_cite_to_refs(
-                    author_part, year_m.group(1), references
-                )
-                for ck in matched_keys:
-                    dedup_key = (ck, i, sec_name)
-                    if dedup_key in seen:
-                        continue
-                    seen.add(dedup_key)
-                    citations.setdefault(ck, []).append({
-                        'section': sec_name,
-                        'snippet': snippet,
-                        'line': i,
-                    })
+                author_part = part[:all_years[0].start()].rstrip(',').strip()
+                for ym in all_years:
+                    matched_keys = _match_apa_cite_to_refs(
+                        author_part, ym.group(1), references
+                    )
+                    for ck in matched_keys:
+                        dedup_key = (ck, i, sec_name)
+                        if dedup_key in seen:
+                            continue
+                        seen.add(dedup_key)
+                        citations.setdefault(ck, []).append({
+                            'section': sec_name,
+                            'snippet': snippet,
+                            'line': i,
+                        })
 
         # Narrative: Smith et al. (2020), Smith and Jones (2020)
         for m in _APA_NARRATIVE_CITE_RE.finditer(line_text):
