@@ -122,10 +122,13 @@ def generate(title: str, subtitle: str, sections: list, hierarchy: dict,
     if state:
         for ref_key, review in state.get('reviews', {}).items():
             if review.get('claude_verdict'):
-                ai_verdicts[str(ref_key)] = {
+                entry = {
                     'verdict': review.get('claude_verdict', ''),
                     'reason': review.get('claude_reason', ''),
                 }
+                if review.get('claude_summary'):
+                    entry['summary'] = review['claude_summary']
+                ai_verdicts[str(ref_key)] = entry
 
     filter_buttons = _build_filter_buttons(hierarchy)
 
@@ -621,6 +624,11 @@ function renderCards() {{
         ';border:1px solid ' +
         (aiV.verdict === 'pass' ? '#c6f6d5' : aiV.verdict === 'warning' ? '#fefcbf' : '#fed7d7') +
         ';border-radius:4px;"><strong>AI verdict: ' + aiV.verdict.toUpperCase() + '</strong> — ' + escapeHtml(aiV.reason) + '</div>';
+      if (aiV.summary) {{
+        rpHTML += '<details style="margin-top:6px;"><summary style="font-size:0.82rem;font-weight:600;color:#4a5568;cursor:pointer;">AI Analysis Summary</summary>' +
+          '<div style="margin-top:4px;font-size:0.80rem;padding:8px 10px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:4px;color:#4a5568;line-height:1.6;white-space:pre-wrap;">' +
+          escapeHtml(aiV.summary) + '</div></details>';
+      }}
     }}
     rp.innerHTML = rpHTML;
     body.appendChild(rp);

@@ -54,9 +54,14 @@ from state_manager import save_verification_result
 
 For each reference:
 1. Call `gather_evidence(ref_num, reference, citation_contexts, abstract, paper_snippets, pdf_full_text)`
-2. Read the evidence summary
+2. Read the evidence summary — this includes claim-aware snippets that target specific numbers, effect sizes, and directional assertions from the manuscript
 3. Assign a single verdict: **pass**, **warning**, or **flag**
-4. Call `save_verification_result(state_path, ref_num, verdict, reason)`
+4. Write an **AI analysis summary** explaining WHY the reference supports (or fails to support) each specific claim. This should:
+   - Match each manuscript assertion to specific evidence in the paper (quote numbers, findings, conclusions)
+   - Flag if a specific numeric claim (e.g., "effect sizes of 0.30–0.50") cannot be found in the paper
+   - Note if the paper is an animal study being cited without qualification
+   - Note if the paper's actual finding differs from how it's characterized in the manuscript
+5. Call `save_verification_result(state_path, ref_num, verdict, reason, details={"summary": ai_summary_text})`
 
 The verdict covers everything — metadata correctness AND content support. There is no separate "metadata check" step. If metadata is wrong (wrong paper, wrong year), that's a **flag**. If the paper doesn't support the claim, that's a **flag** or **warning**.
 
@@ -64,6 +69,8 @@ Process in batches of ~10 to manage context. Verdicts:
 - **pass**: Paper clearly supports the claims; metadata correct
 - **warning**: Support is indirect, partial, or tangential
 - **flag**: Paper does not support the claim, or metadata mismatch (wrong paper cited)
+
+The AI summary is stored in `claude_summary` in the state file and rendered in the HTML viewer as a collapsible "AI Analysis Summary" section under each reference's verdict.
 
 ### 5. Generate HTML
 

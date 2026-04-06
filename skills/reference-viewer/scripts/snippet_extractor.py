@@ -4,6 +4,13 @@ Given a PDF and a list of citation instances (from manuscript parsing),
 this module finds the actual passages in the PDF that support each claim
 made in the manuscript where the citation appears.
 
+Two extraction strategies:
+1. **Claim-aware**: extracts numbers, effect sizes, directional claims,
+   and named entities from the manuscript context, then searches for
+   paragraphs containing those specific values.
+2. **Keyword TF-IDF**: weighted keyword overlap (fallback when claim-aware
+   extraction finds nothing).
+
 Public API:
     extract_snippets(pdf_path, citation_instances)
         -> list of grouped snippet dicts
@@ -70,10 +77,35 @@ _STOPWORDS = _build_stopwords()
 
 # Pre-compiled patterns
 _BRACKET_RE = re.compile(r'\[\d+(?:[,\s\u2013\u2014\-\u2010\u2011\u2012–—]*\d+)*\]')
+_APA_CITE_RE = re.compile(
+    r'\([^()]*?[A-Z][A-Za-z\-\']+[^()]*?\d{4}[a-z]?(?:\s*;[^()]*?)*\)'
+)
 _LATEX_INLINE_RE = re.compile(r'\$[^$]+\$')
 _LATEX_CMD_RE = re.compile(r'\\[a-zA-Z]+')
 _WORD_SPLIT_RE = re.compile(r'[^a-z0-9]+')
 _HYPHEN_REJOIN_RE = re.compile(r'([a-z])-\n([a-z])')
+
+# Claim-aware patterns
+_NUMBER_RE = re.compile(
+    r'(?<![a-zA-Z])'           # not preceded by letter
+    r'[-−]?'                   # optional minus
+    r'\d+\.?\d*'               # integer or decimal
+    r'(?:\s*[-–—]\s*'          # optional range (dash)
+    r'[-−]?\d+\.?\d*)?'        # second number
+    r'(?=%|$|\s|[,;)\]])'     # followed by %, end, space, punctuation
+)
+_EFFECT_SIZE_RE = re.compile(
+    r'(?:r|R|d|g|η|beta|β|B|OR|HR|RR|AUC|ICC|κ|kappa)\s*'
+    r'[=≈~]\s*'
+    r'[-−]?\d+\.?\d*',
+    re.IGNORECASE
+)
+_PVALUE_RE = re.compile(
+    r'[pP]\s*[<>=≤≥]\s*0?\.\d+',
+)
+_NVALUE_RE = re.compile(
+    r'[Nn]\s*=\s*[\d,]+',
+)
 
 
 # ---------------------------------------------------------------------------
@@ -81,13 +113,7 @@ _HYPHEN_REJOIN_RE = re.compile(r'([a-z])-\n([a-z])')
 # ---------------------------------------------------------------------------
 
 def _extract_full_text(pdf_path):
-    """Read all pages with pymupdf and return the full text.
-
-    Cleans up artificial hyphenation at line breaks: if a word is split
-    like ``word-\\ntion``, rejoin to ``wordtion`` only if the character
-    before ``-\\n`` is a lowercase letter and the character after is also
-    lowercase.
-    """
+    """Read all pages with pymupdf and return the full text."""
     pdf_path = Path(pdf_path)
     try:
         doc = fitz.open(str(pdf_path))
@@ -101,10 +127,7 @@ def _extract_full_text(pdf_path):
             parts.append("")
     doc.close()
     text = "\n".join(parts)
-
-    # Rejoin artificial hyphenation
     text = _HYPHEN_REJOIN_RE.sub(r'\1\2', text)
-
     return text
 
 
@@ -120,10 +143,7 @@ def _split_paragraphs(text):
 
 
 def _compute_word_freqs(full_text):
-    """Count word frequencies across the entire PDF text.
-
-    Returns dict {word: count}.
-    """
+    """Count word frequencies across the entire PDF text."""
     words = _WORD_SPLIT_RE.split(full_text.lower())
     freqs = {}
     for w in words:
@@ -133,30 +153,114 @@ def _compute_word_freqs(full_text):
 
 
 # ---------------------------------------------------------------------------
-# Keyword extraction and scoring
+# Claim-aware extraction
+# ---------------------------------------------------------------------------
+
+def _extract_claim_numbers(manuscript_snippet):
+    """Extract specific numeric values from the manuscript claim.
+
+    Returns a list of strings like '0.30', '971', '0.50', '50–88'.
+    """
+    text = manuscript_snippet
+    # Remove citations
+    text = _BRACKET_RE.sub('', text)
+    text = _APA_CITE_RE.sub('', text)
+    text = _LATEX_INLINE_RE.sub('', text)
+
+    numbers = []
+    for m in _NUMBER_RE.finditer(text):
+        val = m.group().strip()
+        if val and len(val) <= 15:
+            numbers.append(val)
+
+    # Also grab effect sizes, p-values, N-values as complete strings
+    for pattern in (_EFFECT_SIZE_RE, _PVALUE_RE, _NVALUE_RE):
+        for m in pattern.finditer(text):
+            numbers.append(m.group().strip())
+
+    return numbers
+
+
+def _extract_claim_phrases(manuscript_snippet):
+    """Extract short meaningful phrases (2-4 words) from the claim.
+
+    Targets noun phrases, directional claims, and technical terms.
+    """
+    text = manuscript_snippet
+    text = _BRACKET_RE.sub('', text)
+    text = _APA_CITE_RE.sub('', text)
+    text = _LATEX_INLINE_RE.sub('', text)
+    text = _LATEX_CMD_RE.sub('', text)
+
+    phrases = []
+
+    # Directional/comparative phrases
+    directional = re.findall(
+        r'(?:more|less|greater|stronger|weaker|higher|lower|increased?|decreased?|reduced?|'
+        r'impaired?|enhanced?|amplified?|blunted?|loss\s+of|associated\s+with|'
+        r'predicts?|predicted|mediates?|moderates?)'
+        r'\s+[a-z]+(?:\s+[a-z]+)?',
+        text.lower()
+    )
+    phrases.extend(directional)
+
+    # Technical compound terms (capitalized or hyphenated)
+    technical = re.findall(
+        r'[A-Z][a-z]+(?:[-\s][A-Z]?[a-z]+)+',
+        _BRACKET_RE.sub('', _APA_CITE_RE.sub('', manuscript_snippet))
+    )
+    phrases.extend(t.lower() for t in technical)
+
+    return phrases
+
+
+def _score_paragraph_claims(paragraph, numbers, phrases, keywords, word_freqs):
+    """Score a paragraph using claim-aware features.
+
+    Scoring hierarchy:
+    1. Exact numeric match: +5 per number found
+    2. Phrase match: +3 per phrase found
+    3. Keyword TF-IDF: as before (fallback)
+    """
+    para_lower = paragraph.lower()
+    para_words = set(_WORD_SPLIT_RE.split(para_lower))
+    score = 0.0
+
+    # Numeric matches — high value
+    for num in numbers:
+        # Normalize dashes for range matching
+        normalized = num.replace('–', '-').replace('—', '-').replace('−', '-')
+        para_normalized = para_lower.replace('–', '-').replace('—', '-').replace('−', '-')
+        if normalized in para_normalized:
+            score += 5.0
+
+    # Phrase matches
+    for phrase in phrases:
+        if phrase in para_lower:
+            score += 3.0
+
+    # Keyword TF-IDF (fallback weight)
+    for kw in keywords:
+        if kw in para_words:
+            freq = word_freqs.get(kw, 0)
+            score += 1.0 / math.log2(2 + freq)
+
+    return score
+
+
+# ---------------------------------------------------------------------------
+# Keyword extraction (original, used as fallback)
 # ---------------------------------------------------------------------------
 
 def _extract_claim_keywords(manuscript_snippet):
-    """Extract content keywords from a manuscript citation context.
-
-    Removes citation brackets, LaTeX, stopwords, and short tokens.
-    Returns a list of unique content words.
-    """
+    """Extract content keywords from a manuscript citation context."""
     text = manuscript_snippet
-
-    # Remove [N], [N,M], [N-M] patterns
     text = _BRACKET_RE.sub('', text)
-
-    # Remove LaTeX inline math
+    text = _APA_CITE_RE.sub('', text)
     text = _LATEX_INLINE_RE.sub('', text)
-
-    # Remove LaTeX commands
     text = _LATEX_CMD_RE.sub('', text)
-
-    # Lowercase and split on whitespace/punctuation
     words = _WORD_SPLIT_RE.split(text.lower())
 
-    # Filter
     seen = set()
     keywords = []
     for w in words:
@@ -166,7 +270,6 @@ def _extract_claim_keywords(manuscript_snippet):
             continue
         if w in seen:
             continue
-        # Skip pure numbers
         if w.isdigit():
             continue
         seen.add(w)
@@ -175,40 +278,17 @@ def _extract_claim_keywords(manuscript_snippet):
     return keywords
 
 
-def _score_paragraph(paragraph, keywords, word_freqs):
-    """Score a paragraph by weighted keyword overlap.
-
-    Rarer words in the PDF count more: score per keyword =
-    1 / log2(2 + word_freqs[keyword]).
-    """
-    para_words = set(_WORD_SPLIT_RE.split(paragraph.lower()))
-    total = 0.0
-    for kw in keywords:
-        if kw in para_words:
-            freq = word_freqs.get(kw, 0)
-            total += 1.0 / math.log2(2 + freq)
-    return total
-
-
 def _truncate_to_words(text, max_words=150):
-    """Truncate to ~max_words words, cutting at a sentence boundary if possible.
-
-    If no sentence boundary is found within the last 20 words, cut at
-    a word boundary and append '...'.
-    """
+    """Truncate to ~max_words words, cutting at sentence boundary if possible."""
     words = text.split()
     if len(words) <= max_words:
         return text
 
-    # Try to find a sentence boundary (period followed by space) within
-    # the last 20 words of the allowed range
     candidate = " ".join(words[:max_words])
     search_start = len(" ".join(words[:max(0, max_words - 20)]))
     last_period = candidate.rfind('. ', search_start)
     if last_period != -1:
         return candidate[:last_period + 1]
-
-    # No sentence boundary found — cut at word boundary
     return candidate + "..."
 
 
@@ -219,6 +299,9 @@ def _truncate_to_words(text, max_words=150):
 def extract_snippets(pdf_path, citation_instances):
     """Extract supporting snippets from a PDF for each citation instance.
 
+    Uses claim-aware extraction (numbers, phrases) first, falling back
+    to keyword TF-IDF if no claim-specific matches are found.
+
     Args:
         pdf_path: Path to the matched PDF.
         citation_instances: list of {section, snippet, line} -- from
@@ -228,41 +311,44 @@ def extract_snippets(pdf_path, citation_instances):
         list of dicts, each with:
             instances        -- [{section: str, line: int}, ...]  (grouped)
             manuscript_context -- str (the manuscript text)
-            pdf_snippets     -- [str, str]  (up to 2 supporting passages)
+            pdf_snippets     -- [str, str, str]  (up to 3 supporting passages)
     """
     pdf_path = Path(pdf_path)
 
-    # Extract and process the PDF text
     full_text = _extract_full_text(pdf_path)
     paragraphs = _split_paragraphs(full_text)
     word_freqs = _compute_word_freqs(full_text)
 
-    # For each instance, compute top-2 snippets
     instance_results = []
     for inst in citation_instances:
-        keywords = _extract_claim_keywords(inst["snippet"])
+        snippet = inst["snippet"]
+        keywords = _extract_claim_keywords(snippet)
+        numbers = _extract_claim_numbers(snippet)
+        phrases = _extract_claim_phrases(snippet)
 
-        # Score all paragraphs
+        # Score all paragraphs with claim-aware scoring
         scored = []
         for para in paragraphs:
-            score = _score_paragraph(para, keywords, word_freqs)
+            score = _score_paragraph_claims(
+                para, numbers, phrases, keywords, word_freqs
+            )
             if score > 0:
                 scored.append((score, para))
 
-        # Sort descending by score, take top 2
+        # Sort descending, take top 3
         scored.sort(key=lambda x: -x[0])
-        top_paras = [_truncate_to_words(para) for _, para in scored[:2]]
+        top_paras = [_truncate_to_words(para) for _, para in scored[:3]]
 
         instance_results.append({
             "section": inst["section"],
             "line": inst["line"],
-            "manuscript_context": inst["snippet"],
+            "manuscript_context": snippet,
             "pdf_snippets": top_paras,
         })
 
-    # Grouping: merge instances that have identical top-2 snippet texts
+    # Grouping: merge instances that have identical top snippet texts
     groups = []
-    snippet_key_to_group = {}  # tuple of snippet texts -> group index
+    snippet_key_to_group = {}
 
     for ir in instance_results:
         key = tuple(ir["pdf_snippets"])

@@ -102,6 +102,8 @@ def save_verification_result(
     entry["claude_reason"] = reason
     entry["claude_timestamp"] = _now_iso()
     if details:
+        if "summary" in details:
+            entry["claude_summary"] = details.pop("summary")
         entry["claude_details"] = details
 
     reviews[ref_key] = entry
