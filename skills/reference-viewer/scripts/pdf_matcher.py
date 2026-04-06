@@ -93,10 +93,10 @@ def _scan_already_named_apa(literature_dir: Path, references: dict) -> dict:
     for p in literature_dir.glob("*.pdf"):
         m = _APA_NAMED_RE.match(p.name)
         if m:
-            file_author = m.group(1).lower()
+            file_author = re.sub(r"['\u2019]", "", m.group(1).lower())
             file_year = int(m.group(2))
             for key, ref in references.items():
-                ref_author = _make_author_last(ref.get("authors", "")).lower()
+                ref_author = re.sub(r"['\u2019]", "", _make_author_last(ref.get("authors", "")).lower())
                 if ref_author == file_author and ref.get("year") == file_year:
                     result[key] = p
                     break
