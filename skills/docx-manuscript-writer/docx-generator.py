@@ -507,8 +507,8 @@ def _add_table_note(doc, note_text, font_name=None, font_size=10,
     except KeyError:
         p = doc.add_paragraph(style='Normal')
     p.paragraph_format.first_line_indent = Pt(0)
-    # Strip any existing Note prefix (plain or italic markdown) and add bold one
-    note_text = re.sub(r'^\*?Notes?[\.:]\*?\s*', '', note_text)
+    # Strip any existing Note prefix (plain, italic, or bold markdown) and add bold one
+    note_text = re.sub(r'^\*{0,2}Notes?[\.:]\*{0,2}\s*', '', note_text)
     r = p.add_run('Note. ')
     r.bold = True
     _set_run_font(r, font_name, font_size)

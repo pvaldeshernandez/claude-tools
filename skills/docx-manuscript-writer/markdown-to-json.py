@@ -112,7 +112,7 @@ def parse_body(lines):
                 if re.match(r'^!\[', cur_stripped):
                     break
                 # Stop at table note
-                if re.match(r'^\*?Notes?[\.:]\*?', cur_stripped, re.I):
+                if re.match(r'^\*{0,2}Notes?[\.:]', cur_stripped, re.I):
                     break
                 # Stop at markdown table (line starting with |)
                 if cur_stripped.startswith('|') and '|' in cur_stripped[1:]:
@@ -188,7 +188,7 @@ def parse_body(lines):
                 i += 1
             if i < len(lines):
                 note_line = lines[i].strip()
-                if re.match(r'^(\*?Notes?[\.:]\*?|Notes?[\.:])(.+)', note_line, re.I):
+                if re.match(r'^\*{0,2}Notes?[\.:]\*{0,2}\s*(.+)', note_line, re.I):
                     sections.append({
                         'header': '',
                         'level': 0,
@@ -226,7 +226,7 @@ def parse_body(lines):
                 i += 1
             if i < len(lines):
                 note_line = lines[i].strip()
-                if re.match(r'^(\*?Notes?[\.:]\*?|Notes?[\.:])(.+)', note_line, re.I):
+                if re.match(r'^\*{0,2}Notes?[\.:]\*{0,2}\s*(.+)', note_line, re.I):
                     sections.append({
                         'header': '',
                         'level': 0,
