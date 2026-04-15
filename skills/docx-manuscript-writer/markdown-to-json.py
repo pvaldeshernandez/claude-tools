@@ -317,9 +317,8 @@ def main():
     parser.add_argument('--output', '-o', help='Output JSON path (default: same dir, _input.json)')
     parser.add_argument('--journal', '-j', default='journal-of-pain',
                         help='Journal profile name (default: journal-of-pain)')
-    parser.add_argument('--authors', '-a',
-                        default='valdes-hernandez,montesino-goicolea,fillingim,cruz-almeida',
-                        help='Comma-separated author keys')
+    parser.add_argument('--authors', '-a', default='',
+                        help='Comma-separated author keys (empty = no author block)')
     parser.add_argument('--figures-dir', '-f', help='Directory containing figure images')
     parser.add_argument('--page-break-before', '-p',
                         default='Abstract,Introduction',
@@ -345,9 +344,10 @@ def main():
     figures_dir = args.figures_dir or os.path.join(
         os.path.dirname(manuscript_dir), 'figures')
 
+    authors_list = [a.strip() for a in args.authors.split(',') if a.strip()]
     data = {
         'title': title,
-        'authors': [a.strip() for a in args.authors.split(',')],
+        'authors': authors_list,
         'journal_profile': args.journal,
         'output_path': docx_path,
         'figures_dir': figures_dir,

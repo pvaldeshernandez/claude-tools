@@ -1553,14 +1553,18 @@ def generate_docx(input_data):
         font_size = journal.get('font_size', 12)
 
     # -- Title (use Title style if available, else centered bold) --
-    try:
-        p = doc.add_paragraph(input_data['title'], style='Title')
-    except KeyError:
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run(input_data['title'])
-        r.bold = True
-        _set_run_font(r, font_name, font_size)
+    # Only emit a title block when one was provided. Otherwise (e.g.,
+    # supplementary materials documents that have no title), skip the
+    # styled paragraph so the docx doesn't begin with an empty Title.
+    if input_data.get('title'):
+        try:
+            p = doc.add_paragraph(input_data['title'], style='Title')
+        except KeyError:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(input_data['title'])
+            r.bold = True
+            _set_run_font(r, font_name, font_size)
 
     # -- Authors: ALWAYS use template font (Times New Roman), never journal font --
     # The template Normal style defines the canonical font. Authors, affiliations,
