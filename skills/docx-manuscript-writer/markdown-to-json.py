@@ -162,8 +162,9 @@ def parse_body(lines):
                 table_lines = []
                 while i < len(lines) and lines[i].strip().startswith('|'):
                     row = lines[i].strip()
-                    # Skip separator rows (|---|---|)
-                    if re.match(r'^\|[\s\-:]+\|', row):
+                    # Skip separator rows (|---|---|): every cell between pipes
+                    # contains only dashes, colons, or whitespace (and >= 1 dash)
+                    if re.match(r'^\|(?:[\s\-:]*-[\s\-:]*\|)+\s*$', row):
                         i += 1
                         continue
                     # Convert pipe-delimited to tab-separated
@@ -202,7 +203,8 @@ def parse_body(lines):
             table_lines = []
             while i < len(lines) and lines[i].strip().startswith('|'):
                 row = lines[i].strip()
-                if re.match(r'^\|[\s\-:]+\|', row):
+                # Stricter: every cell must contain at least one dash (true separator)
+                if re.match(r'^\|(?:[\s\-:]*-[\s\-:]*\|)+\s*$', row):
                     i += 1
                     continue
                 cells = [c.strip() for c in row.split('|')]
