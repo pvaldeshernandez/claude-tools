@@ -933,7 +933,43 @@ def _insert_grouped_figure(doc, fig_number, caption_text, figures_dir,
         r1_t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
         r1_t.text = cap_match.group(1) + ' '
 
-        # Rest of caption — handle inline math ($...$) and formatting
+        # Rest of caption — handle inline math ($...$) and **bold**/*italic*
+        # markdown. Helper builds a w:r with optional bold/italic.
+        def _emit_xml_run(parent, txt, bold_flag=False, italic_flag=False):
+            if not txt:
+                return
+            r = etree.SubElement(parent, f'{{{W_NS}}}r')
+            rPr = etree.SubElement(r, f'{{{W_NS}}}rPr')
+            if bold_flag:
+                etree.SubElement(rPr, f'{{{W_NS}}}b')
+            if italic_flag:
+                etree.SubElement(rPr, f'{{{W_NS}}}i')
+            if font_name:
+                rFonts = etree.SubElement(rPr, f'{{{W_NS}}}rFonts')
+                rFonts.set(f'{{{W_NS}}}ascii', font_name)
+                rFonts.set(f'{{{W_NS}}}hAnsi', font_name)
+            t = etree.SubElement(r, f'{{{W_NS}}}t')
+            t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+            t.text = txt
+
+        def _emit_with_markdown(parent, txt):
+            """Walk txt segmenting on ***bold-italic***, **bold**, *italic*."""
+            md_re = re.compile(r'(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)')
+            cursor = 0
+            for m in md_re.finditer(txt):
+                if m.start() > cursor:
+                    _emit_xml_run(parent, txt[cursor:m.start()])
+                token = m.group(0)
+                if token.startswith('***'):
+                    _emit_xml_run(parent, token[3:-3], bold_flag=True, italic_flag=True)
+                elif token.startswith('**'):
+                    _emit_xml_run(parent, token[2:-2], bold_flag=True)
+                else:
+                    _emit_xml_run(parent, token[1:-1], italic_flag=True)
+                cursor = m.end()
+            if cursor < len(txt):
+                _emit_xml_run(parent, txt[cursor:])
+
         rest = cap_match.group(2)
         if rest:
             if '$' in rest:
@@ -941,15 +977,7 @@ def _insert_grouped_figure(doc, fig_number, caption_text, figures_dir,
                 for idx, part in enumerate(parts):
                     if idx % 2 == 0:
                         if part:
-                            r2 = etree.SubElement(cap_p, f'{{{W_NS}}}r')
-                            r2Pr = etree.SubElement(r2, f'{{{W_NS}}}rPr')
-                            if font_name:
-                                rFonts2 = etree.SubElement(r2Pr, f'{{{W_NS}}}rFonts')
-                                rFonts2.set(f'{{{W_NS}}}ascii', font_name)
-                                rFonts2.set(f'{{{W_NS}}}hAnsi', font_name)
-                            r2_t = etree.SubElement(r2, f'{{{W_NS}}}t')
-                            r2_t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
-                            r2_t.text = part
+                            _emit_with_markdown(cap_p, part)
                     else:
                         # Build OMML equation and append to paragraph
                         tokens = _parse_latex_to_tokens(part)
@@ -958,15 +986,7 @@ def _insert_grouped_figure(doc, fig_number, caption_text, figures_dir,
                             oMath.append(_build_element_from_token(tok, font_name))
                         cap_p.append(oMath)
             else:
-                r2 = etree.SubElement(cap_p, f'{{{W_NS}}}r')
-                r2Pr = etree.SubElement(r2, f'{{{W_NS}}}rPr')
-                if font_name:
-                    rFonts2 = etree.SubElement(r2Pr, f'{{{W_NS}}}rFonts')
-                    rFonts2.set(f'{{{W_NS}}}ascii', font_name)
-                    rFonts2.set(f'{{{W_NS}}}hAnsi', font_name)
-                r2_t = etree.SubElement(r2, f'{{{W_NS}}}t')
-                r2_t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
-                r2_t.text = rest
+                _emit_with_markdown(cap_p, rest)
     else:
         r1 = etree.SubElement(cap_p, f'{{{W_NS}}}r')
         r1_t = etree.SubElement(r1, f'{{{W_NS}}}t')
