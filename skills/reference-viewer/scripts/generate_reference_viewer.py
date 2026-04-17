@@ -525,17 +525,166 @@ def _expand_citation(text):
     return nums
 
 
-def _build_snippet(line_text, match, sections, line_num):
-    """Build a ~300-char snippet centred on a regex match."""
-    start_char = max(0, match.start() - 150)
-    end_char = min(len(line_text), match.end() + 150)
-    snippet = line_text[start_char:end_char]
-    if start_char > 0:
-        snippet = '...' + snippet
-    if end_char < len(line_text):
-        snippet = snippet + '...'
-    snippet = _balance_dollars(snippet)
-    return snippet
+# Candidate sentence-break: punctuation followed by whitespace and a capital.
+_SENTENCE_BREAK_RE = re.compile(r'([.!?])(\s+)(?=[A-Z\[\"(])')
+
+# Abbreviations that, when they *precede* a candidate break, indicate the
+# period is part of the abbreviation and not an actual sentence terminator.
+# We test the ~8 chars before the break position.
+_ABBREV_PAT = re.compile(
+    r'(?:\b(?:et\s+al|e\.g|i\.e|cf|vs|Dr|Mr|Mrs|Ms|St|Fig|No|Eq|Ref|Refs)|'
+    r'\b[A-Z])$',
+    re.IGNORECASE,
+)
+
+# Markers that signal a sentence continues discussion of the preceding citation
+# without introducing a new one. These are matched case-insensitively at or
+# near the start of the sentence. "et al." catches "Smith et al. found..."
+# patterns; pronouns and demonstratives catch "They found..." / "Their study..."
+# / "This analysis..." etc.
+_CONTINUATION_MARKERS = (
+    r'\bet\s+al\.?',                    # "Smith et al. reported..."
+    r'\bthey\b', r'\btheir\b', r'\bthem\b',
+    r'\bthe\s+authors?\b',
+    r'\bthese\s+authors?\b',
+    r'\bthis\s+(?:study|work|paper|analysis|cohort|sample|group|report|'
+    r'finding|observation|result|approach|dataset)\b',
+    r'\bthat\s+(?:study|work|paper|analysis|cohort|sample|group|report|'
+    r'finding|observation|result|approach|dataset)\b',
+    r'\bin\s+(?:their|that|this)\s+',   # "In their sample..."
+    r'\bthe\s+(?:study|analysis|cohort|sample|authors?)\s+',
+)
+_CONTINUATION_RE = re.compile(
+    r'^[\s"\'\(]*(?:' + '|'.join(_CONTINUATION_MARKERS) + r')',
+    re.IGNORECASE,
+)
+
+_CITE_ANY_RE = re.compile(
+    r'\[\d+(?:\s*[,\u2013\u2014\-]\s*\d+)*(?:\s*,\s*\d+)*\]'
+)
+
+
+def _split_sentences(text):
+    """Split paragraph-ish text into sentences, preserving original order.
+
+    Skips candidate splits where the word immediately preceding the period
+    is a known abbreviation ("et al.", "e.g.", "Fig.", "Dr.", initials, etc.).
+    """
+    flat = re.sub(r'\s+', ' ', text).strip()
+    if not flat:
+        return []
+    sentences = []
+    last_end = 0
+    for m in _SENTENCE_BREAK_RE.finditer(flat):
+        # The punctuation is captured in group 1; the position just before
+        # it is where the abbreviation test applies.
+        before = flat[last_end:m.start()]
+        # Look at the last ~8 characters of the preceding run for an abbrev
+        tail = before[-8:]
+        if _ABBREV_PAT.search(tail):
+            continue  # not a real sentence break
+        sentence = before + m.group(1)  # include the period
+        sentences.append(sentence.strip())
+        last_end = m.end()
+    tail = flat[last_end:].strip()
+    if tail:
+        sentences.append(tail)
+    return sentences
+
+
+def _cite_refs_in(sentence):
+    """Return the set of reference numbers cited in *sentence* (Vancouver)."""
+    nums = set()
+    for m in _CITE_ANY_RE.finditer(sentence):
+        # reuse _expand_citation to parse numbers and ranges
+        body_m = re.match(r'\[(.+)\]', m.group(0))
+        if body_m:
+            nums |= _expand_citation(body_m.group(1))
+    return nums
+
+
+def _is_continuation(sentence, target_ref):
+    """True if *sentence* appears to continue discussion of *target_ref*
+    without citing a different reference.
+    """
+    other_refs = _cite_refs_in(sentence) - {target_ref}
+    if other_refs:
+        return False
+    # Recite of the same ref is a strong continuation signal
+    if target_ref in _cite_refs_in(sentence):
+        return True
+    return bool(_CONTINUATION_RE.search(sentence))
+
+
+def _build_snippet(line_text, match, sections, line_num, target_ref=None):
+    """Build a snippet around a citation match.
+
+    Returns the full sentence containing the match, plus:
+      * up to 3 following sentences that continue discussing the same
+        reference (author surname + "et al.", pronouns, demonstratives, or
+        a repeat of the same citation number; stopping at any citation to
+        a different reference or lack of continuation markers); and
+      * 1 preceding sentence if it sets up the citation without itself
+        citing a different reference.
+
+    The result is trimmed to ~900 chars so the AI verification prompt
+    doesn't explode on long expansions.
+    """
+    sentences = _split_sentences(line_text)
+    if not sentences:
+        return _balance_dollars(line_text)
+
+    # Locate which sentence contains the citation match
+    offsets = []
+    pos = 0
+    flat = re.sub(r'\s+', ' ', line_text).strip()
+    for s in sentences:
+        idx = flat.find(s, pos)
+        if idx < 0:
+            idx = pos
+        offsets.append(idx)
+        pos = idx + len(s)
+    match_text = match.group(0)
+    match_sent_idx = 0
+    for i, s in enumerate(sentences):
+        if match_text in s:
+            match_sent_idx = i
+            break
+
+    collected = [sentences[match_sent_idx]]
+
+    # Pull 1 preceding sentence for lead-in (only if it does not cite a
+    # different reference)
+    if match_sent_idx > 0:
+        prev = sentences[match_sent_idx - 1]
+        if target_ref is None or \
+                not (_cite_refs_in(prev) - {target_ref}):
+            collected.insert(0, prev)
+
+    # Walk forward through continuation sentences (max 3)
+    added = 0
+    i = match_sent_idx + 1
+    while i < len(sentences) and added < 3:
+        s = sentences[i]
+        if target_ref is None:
+            # Without a target, include the next sentence only if it clearly
+            # continues (pronoun/demonstrative) AND does not introduce a new
+            # citation.
+            if _cite_refs_in(s):
+                break
+            if not _CONTINUATION_RE.search(s):
+                break
+        else:
+            if not _is_continuation(s, target_ref):
+                break
+        collected.append(s)
+        added += 1
+        i += 1
+
+    snippet = ' '.join(collected)
+    if len(snippet) > 900:
+        snippet = snippet[:897].rstrip() + '...'
+    return _balance_dollars(snippet)
 
 
 def _match_apa_cite_to_refs(author_fragment, year_str, references):
@@ -644,7 +793,6 @@ def _find_citations_vancouver(lines, sections):
 
         for m in _CITE_RE.finditer(line_text):
             ref_nums = _expand_citation(m.group(1))
-            snippet = _build_snippet(line_text, m, sections, i)
             sec_name = section_at_line(sections, i)
 
             for n in ref_nums:
@@ -652,6 +800,11 @@ def _find_citations_vancouver(lines, sections):
                 if key in seen:
                     continue
                 seen.add(key)
+                # Build a per-reference snippet so continuation logic can
+                # treat the target reference specially (repeat cites of the
+                # same ref extend the window; cites to other refs close it).
+                snippet = _build_snippet(line_text, m, sections, i,
+                                         target_ref=n)
                 citations.setdefault(n, []).append({
                     'section': sec_name,
                     'snippet': snippet,
