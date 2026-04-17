@@ -12,8 +12,13 @@ Custom skills and MCP servers for Claude Code.
 
 ## MCP Servers
 
-- **reference-reviewer** — MCP server for manuscript reference parsing, verification, and viewer generation
 - **uf_mcp_manuscript_search** — Multi-database academic literature search (PubMed, CrossRef, Scopus, PLOS, Springer, Unpaywall)
+
+The former `reference-reviewer` MCP server has been superseded by the
+`reference-viewer` skill, which adds AI verification, content-based PDF
+matching (no renaming), expanded citation-context extraction (full
+sentence + continuation sentences), and OpenAlex / Semantic Scholar
+fallbacks for abstract fetching.
 
 ## Setup
 
