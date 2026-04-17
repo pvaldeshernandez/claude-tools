@@ -121,13 +121,13 @@ _SUB_DIGITS = str.maketrans('0123456789+-=()', '\u2080\u2081\u2082\u2083\u2084\u
 
 
 def load_authors():
-    with open(AUTHORS_FILE) as f:
+    with open(AUTHORS_FILE, encoding='utf-8') as f:
         return yaml.safe_load(f)['collaborators']
 
 
 def load_journal(profile_name):
     path = os.path.join(JOURNALS_DIR, f'{profile_name}.yaml')
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
@@ -697,13 +697,19 @@ def _find_figure_file(fig_number, figures_dir):
     return None
 
 
-def _insert_figure(doc, fig_number, figures_dir, font_name=None, font_size=None):
+def _insert_figure(doc, fig_number, figures_dir, font_name=None, font_size=None,
+                   fig_path=None):
     """Insert a figure image inline in a centered paragraph.
 
     Image is inserted at page width (6.5in for 1in margins) in a centered
     Normal paragraph with keep_with_next=True so it stays with its caption.
+
+    If ``fig_path`` is provided (explicit path from MD ``![](path)`` or caller),
+    it is used as-is; otherwise the file is located by scanning ``figures_dir``
+    for ``Figure{N}.png`` and similar filename patterns.
     """
-    fig_path = _find_figure_file(fig_number, figures_dir)
+    if not fig_path or not os.path.isfile(fig_path):
+        fig_path = _find_figure_file(fig_number, figures_dir)
     if not fig_path:
         return False
 
@@ -723,7 +729,8 @@ def _insert_grouped_figure(doc, fig_number, caption_text, figures_dir,
                            font_name=None, font_size=None,
                            superscript_citations=False,
                            target_width_inches=6.5,
-                           page_width_inches=6.5):
+                           page_width_inches=6.5,
+                           fig_path=None):
     """Insert a figure with caption as a grouped inline object.
 
     Creates an inline DrawingML group (wpg:wgp) containing:
@@ -733,10 +740,14 @@ def _insert_grouped_figure(doc, fig_number, caption_text, figures_dir,
     The group is always full page width so the caption spans the whole line,
     even when the image is narrower. The group uses inline (In Line with Text)
     wrapping, matching Word's behavior when you group objects.
+
+    If ``fig_path`` is provided (explicit path from MD ``![](path)``), it is
+    used as-is; otherwise the file is located by scanning ``figures_dir``.
     """
     from PIL import Image as PILImage
 
-    fig_path = _find_figure_file(fig_number, figures_dir)
+    if not fig_path or not os.path.isfile(fig_path):
+        fig_path = _find_figure_file(fig_number, figures_dir)
     if not fig_path:
         return False
 
@@ -1645,6 +1656,8 @@ def generate_docx(input_data):
     figures_dir = input_data.get('figures_dir', '')
     if not figures_dir:
         figures_dir = os.path.dirname(input_data.get('output_path', ''))
+    # Root for resolving explicit figure paths from MD ``![](path)``
+    manuscript_src_dir = input_data.get('manuscript_src_dir', '') or figures_dir
 
     # -- Caption/table font sizes --
     caption_font_size = journal.get('caption_font_size', 10)
@@ -1725,25 +1738,36 @@ def generate_docx(input_data):
                 caption_text = re.sub(r'\*\*(Figure [A-Za-z]?\d+\.)\*\*',
                                       r'\1', caption_text)
             fig_width = section.get('figure_width', 6.5)
+            # Resolve an explicit path from the MD ``![](path)``
+            fig_src = section.get('figure_src')
+            fig_path = None
+            if fig_src:
+                candidate = fig_src if os.path.isabs(fig_src) else os.path.join(
+                    manuscript_src_dir, fig_src)
+                if os.path.isfile(candidate):
+                    fig_path = candidate
             if fig_num and caption_text:
                 # Try grouped figure (image + caption as group, Square wrapping)
                 try:
                     _insert_grouped_figure(doc, fig_num, caption_text,
                                            figures_dir, font_name, font_size,
                                            superscript_citations=superscript_cites,
-                                           target_width_inches=fig_width)
+                                           target_width_inches=fig_width,
+                                           fig_path=fig_path)
                 except Exception as e:
                     # Fallback to inline if grouping fails — log the error
                     import traceback
                     print(f"WARNING: Grouped figure failed for Figure {fig_num}, "
                           f"falling back to inline: {e}")
                     traceback.print_exc()
-                    _insert_figure(doc, fig_num, figures_dir, font_name, font_size)
+                    _insert_figure(doc, fig_num, figures_dir, font_name, font_size,
+                                   fig_path=fig_path)
                     _add_figure_caption(doc, caption_text, font_name,
                                         font_size=font_size,
                                         superscript_citations=superscript_cites)
             elif fig_num:
-                _insert_figure(doc, fig_num, figures_dir, font_name, font_size)
+                _insert_figure(doc, fig_num, figures_dir, font_name, font_size,
+                               fig_path=fig_path)
             elif caption_text:
                 _add_figure_caption(doc, caption_text, font_name,
                                     font_size=font_size,
@@ -1825,6 +1849,6 @@ if __name__ == '__main__':
     if len(sys.argv) < 2:
         input_data = json.load(sys.stdin)
     else:
-        with open(sys.argv[1]) as f:
+        with open(sys.argv[1], encoding='utf-8') as f:
             input_data = json.load(f)
     generate_docx(input_data)

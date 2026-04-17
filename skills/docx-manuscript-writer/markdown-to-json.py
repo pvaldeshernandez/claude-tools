@@ -241,11 +241,13 @@ def parse_body(lines):
         fig_match = re.match(r'^\[INSERT FIGURE ([A-Za-z]?\d+) HERE\]', line)
         md_img_match = re.match(r'^!\[.*\]\((.+)\)', line) if not fig_match else None
         if fig_match or md_img_match:
+            fig_src = None
             if fig_match:
                 fig_num = fig_match.group(1)
             else:
                 # Extract figure number from path (e.g., figure_s1_..., figure3, Fig_S2)
-                img_path = md_img_match.group(1)
+                img_path = md_img_match.group(1).strip()
+                fig_src = img_path
                 num_match = re.search(r'figure[_\-]?([A-Za-z]?\d+)', img_path, re.I)
                 fig_num = num_match.group(1) if num_match else '0'
             i += 1
@@ -266,12 +268,15 @@ def parse_body(lines):
                 i += 1
             caption = ' '.join(caption_lines)
             caption = re.sub(r'\*\*(Figure [A-Za-z]?\d+\.)\*\*', r'\1', caption)
-            sections.append({
+            fig_section = {
                 'header': '',
                 'level': 0,
                 'text': f'FIGURE:{fig_num}\n{caption}',
                 'type': 'figure'
-            })
+            }
+            if fig_src:
+                fig_section['figure_src'] = fig_src
+            sections.append(fig_section)
             continue
 
         # Plain text paragraph (orphan text not under a heading)
@@ -326,7 +331,7 @@ def main():
     args = parser.parse_args()
 
     # Read manuscript
-    with open(args.manuscript) as f:
+    with open(args.manuscript, encoding='utf-8') as f:
         content = f.read()
     lines = content.split('\n')
 
@@ -351,14 +356,15 @@ def main():
         'journal_profile': args.journal,
         'output_path': docx_path,
         'figures_dir': figures_dir,
+        'manuscript_src_dir': manuscript_dir,
         'page_break_before': [h.strip() for h in args.page_break_before.split(',')],
         'sections': sections,
     }
     if corresponding:
         data['corresponding_author'] = corresponding
 
-    with open(output_path, 'w') as f:
-        json.dump(data, f, indent=2)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
     # Report
     type_counts = {}
