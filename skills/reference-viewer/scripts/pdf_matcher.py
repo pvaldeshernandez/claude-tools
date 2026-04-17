@@ -108,19 +108,28 @@ def _scan_already_named_apa(literature_dir: Path, references: dict) -> dict:
 
 
 def _extract_pdf_metadata(pdf_path: Path) -> dict:
-    """Extract DOI and title from a PDF.
+    """Extract DOI, primary title guess, and candidate title lines from a PDF.
 
-    Returns ``{"doi": str|None, "title": str|None}``.
+    Returns ``{"doi": str|None, "title": str|None, "candidates": list[str],
+    "first_page_text": str}``.
+
+    ``candidates`` includes the metadata title (if present) plus every
+    plausibly-title-like line from the first two pages. Callers can fuzzy-
+    match each candidate against known reference titles -- this is robust to
+    PDFs whose first "title-looking" line is actually the journal header.
     """
     doi = None
     title = None
+    candidates = []
+    first_page_text = ""
 
     try:
         doc = fitz.open(str(pdf_path))
     except Exception:
-        return {"doi": None, "title": None}
+        return {"doi": None, "title": None, "candidates": [],
+                "first_page_text": ""}
 
-    # --- DOI: search document metadata first, then page text (first 3 pages)
+    # --- DOI: metadata first, then page text
     meta = doc.metadata or {}
     for field in ("subject", "keywords", "title", "author"):
         val = meta.get(field, "") or ""
@@ -136,6 +145,8 @@ def _extract_pdf_metadata(pdf_path: Path) -> dict:
             page_texts.append(txt)
         except Exception:
             page_texts.append("")
+    if page_texts:
+        first_page_text = page_texts[0]
 
     if doi is None:
         for txt in page_texts:
@@ -144,26 +155,54 @@ def _extract_pdf_metadata(pdf_path: Path) -> dict:
                 doi = _clean_doi(m.group(1))
                 break
 
-    # --- Title: metadata first, then heuristic from page 1 text
+    # --- Title candidates: metadata + plausibly-title lines from the TOP of
+    # page 1 only. Titles always appear at the top; restricting the scan to
+    # the first ~25 non-blank lines (and stopping at Abstract/Introduction)
+    # prevents reference-list strings from being mistaken for this paper's
+    # title when the target paper happens to cite one of our references.
     meta_title = (meta.get("title") or "").strip()
     if meta_title and not _is_generic_title(meta_title):
         title = meta_title
-    else:
-        # Heuristic: first text block on page 1 that looks like a title
-        if page_texts:
-            for line in page_texts[0].splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                if len(line) < 20 or len(line) > 300:
-                    continue
-                if line.upper() in _BOILERPLATE_UPPER:
-                    continue
-                title = line
+        candidates.append(meta_title)
+
+    if page_texts:
+        seen_lines = 0
+        for raw in page_texts[0].splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            # Stop once we hit the abstract/body so reference-like strings
+            # that appear later on page 1 are not used as title candidates.
+            low = line.lower()
+            if (low.startswith("abstract") or low.startswith("introduction")
+                    or low.startswith("summary") or low.startswith("keywords")
+                    or low.startswith("key words") or low.startswith("background")):
                 break
+            seen_lines += 1
+            if seen_lines > 25:
+                break
+            if len(line) < 15 or len(line) > 300:
+                continue
+            if line.upper() in _BOILERPLATE_UPPER:
+                continue
+            if _is_generic_title(line):
+                continue
+            # Skip lines that are clearly journal header / citation info
+            # (e.g., "Pain, 50 (1992) 67-73" or "Cephalalgia 2018.38:1-211")
+            if re.match(r"^[A-Z][A-Za-z .]+,?\s*\d+\s*[\(:]", line):
+                continue
+            if re.search(r"\bdoi\s*[:/]", low) or re.search(r"\bvol\.", low):
+                continue
+            if line not in candidates:
+                candidates.append(line)
+
+    # Primary title: metadata if available, else the longest plausible line
+    if title is None and candidates:
+        title = max(candidates, key=len)
 
     doc.close()
-    return {"doi": doi, "title": title}
+    return {"doi": doi, "title": title, "candidates": candidates,
+            "first_page_text": first_page_text}
 
 
 def _make_short_title(full_title: str, max_words: int = 4) -> str:
@@ -269,6 +308,8 @@ def match_and_rename(literature_dir, references, style="vancouver"):
         meta = _extract_pdf_metadata(pdf_path)
         pdf_doi = (_clean_doi(meta["doi"]).lower() if meta["doi"] else None)
         pdf_title = meta["title"]
+        candidates = meta.get("candidates") or ([pdf_title] if pdf_title else [])
+        first_page = (meta.get("first_page_text") or "").lower()
 
         ref_num = None
 
@@ -283,31 +324,54 @@ def match_and_rename(literature_dir, references, style="vancouver"):
                     del doi_to_num[ref_doi]
                     break
 
-        # Try title fuzzy match
-        if ref_num is None and pdf_title:
+        # Fuzzy title match across ALL candidate lines
+        if ref_num is None and candidates:
             best_ratio = 0.0
             best_num = None
-            pdf_title_lower = pdf_title.lower()
-            for ref_title_lower, rnum in title_to_num.items():
-                ratio = difflib.SequenceMatcher(
-                    None, pdf_title_lower, ref_title_lower
-                ).ratio()
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_num = rnum
+            for cand in candidates:
+                cand_lower = cand.lower()
+                for ref_title_lower, rnum in title_to_num.items():
+                    ratio = difflib.SequenceMatcher(
+                        None, cand_lower, ref_title_lower
+                    ).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_num = rnum
             if best_ratio >= 0.75 and best_num is not None:
                 ref_num = best_num
-                # Remove from lookup to prevent double-matching
-                for k, v in list(title_to_num.items()):
-                    if v == ref_num:
-                        del title_to_num[k]
-                        break
-                for k, v in list(doi_to_num.items()):
-                    if v == ref_num:
-                        del doi_to_num[k]
-                        break
+
+        # Last resort: first-author surname + year present on page 1.
+        # This rescues pre-DOI PDFs whose first page lacks the real title.
+        # Skip corporate/committee "authors" whose first word is an English
+        # word rather than a surname (e.g., "Headache Classification Cmte.").
+        _NON_SURNAME = {
+            "headache", "international", "world", "american", "european",
+            "national", "society", "committee", "institute", "association",
+            "organization", "group", "consortium", "network", "foundation",
+        }
+        if ref_num is None and first_page:
+            for rnum, ref in references.items():
+                if rnum in matched:
+                    continue
+                ref_author = _make_author_last(ref.get("authors", "")).lower()
+                ref_year = ref.get("year")
+                if not ref_author or not ref_year or len(ref_author) < 4:
+                    continue
+                if ref_author in _NON_SURNAME:
+                    continue
+                if re.search(rf"\b{re.escape(ref_author)}\b", first_page) and \
+                        str(ref_year) in first_page:
+                    ref_num = rnum
+                    break
 
         if ref_num is not None:
+            # Deduplicate lookups so later PDFs do not re-match the same ref
+            for k, v in list(title_to_num.items()):
+                if v == ref_num:
+                    del title_to_num[k]
+            for k, v in list(doi_to_num.items()):
+                if v == ref_num:
+                    del doi_to_num[k]
             matched[ref_num] = pdf_path
         else:
             unmatched.append({
