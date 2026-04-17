@@ -4,10 +4,12 @@
 Sources tried in order for each reference:
   1. CrossRef (works for any DOI; many publishers omit abstracts)
   2. PubMed E-utilities (works for all biomedical articles with PMIDs)
-  3. Scopus (works with institutional API key, good for Elsevier/Springer)
+  3. OpenAlex (free, covers most scholarly articles with DOIs)
+  4. Semantic Scholar (free, strong coverage of recent biomedical articles)
+  5. Scopus (needs institutional API key, good for Elsevier/Springer)
 
 Only needs `requests` (stdlib otherwise). All network calls have timeouts
-and graceful fallbacks — a failure in one source just moves to the next.
+and graceful fallbacks -- a failure in one source just moves to the next.
 """
 
 import re
@@ -149,7 +151,74 @@ def _fetch_pubmed_abstracts_batch(pmids, timeout=30):
 
 
 # ---------------------------------------------------------------------------
-# Source 3: Scopus (via DOI)
+# Source 3: OpenAlex (free, no key) -- abstracts stored as inverted index
+# ---------------------------------------------------------------------------
+
+def _openalex_invidx_to_text(idx):
+    """Reconstruct prose from OpenAlex 'abstract_inverted_index'.
+
+    The index maps word -> list of positions. We invert to a position -> word
+    map and join by position.
+    """
+    if not idx:
+        return None
+    positions = {}
+    for word, locs in idx.items():
+        for p in locs:
+            positions[p] = word
+    if not positions:
+        return None
+    return ' '.join(positions[p] for p in sorted(positions))
+
+
+def _fetch_openalex(doi, email=None, timeout=15):
+    """GET abstract from OpenAlex via DOI. Returns abstract str or None."""
+    if not doi or not requests:
+        return None
+    # OpenAlex accepts DOIs directly as IDs
+    url = f'https://api.openalex.org/works/doi:{doi}'
+    headers = {'User-Agent': f'reference-viewer/2.0 (mailto:{email})' if email
+               else 'reference-viewer/2.0'}
+    params = {'mailto': email} if email else {}
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=timeout)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        idx = data.get('abstract_inverted_index')
+        text = _openalex_invidx_to_text(idx)
+        if text and len(text) > 30:
+            return _strip_tags(text).strip()
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Source 4: Semantic Scholar (free, no key)
+# ---------------------------------------------------------------------------
+
+def _fetch_semantic_scholar(doi, timeout=15):
+    """GET abstract from Semantic Scholar via DOI. Returns abstract or None."""
+    if not doi or not requests:
+        return None
+    url = f'https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}'
+    params = {'fields': 'abstract'}
+    try:
+        r = requests.get(url, params=params, timeout=timeout)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        abstract = (data.get('abstract') or '').strip()
+        if abstract and len(abstract) > 30:
+            return _strip_tags(abstract).strip()
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Source 5: Scopus (via DOI)
 # ---------------------------------------------------------------------------
 
 def _fetch_scopus(doi, api_key=None, timeout=15):
@@ -279,15 +348,48 @@ def fetch_abstracts(references, email=None, scopus_api_key=None, verbose=True):
     if verbose:
         print(f' {pubmed_hits}/{len(needs_pubmed)} found')
 
-    # Identify what still needs Scopus
-    for ref_num in needs_pubmed:
-        if ref_num not in abstracts and references[ref_num].get('doi'):
-            needs_scopus.append(ref_num)
+    # ----- Phase 3: OpenAlex (free, no key) -----
+    still_missing = [n for n in references
+                     if n not in abstracts and references[n].get('doi')]
+    if still_missing:
+        if verbose:
+            print(f'  Phase 3: OpenAlex ({len(still_missing)} remaining)...',
+                  end='', flush=True)
+        oa_hits = 0
+        for ref_num in still_missing:
+            abstract = _fetch_openalex(references[ref_num]['doi'], email=email)
+            if abstract and len(abstract) > 30:
+                abstracts[ref_num] = abstract
+                oa_hits += 1
+            time.sleep(0.15)
+        if verbose:
+            print(f' {oa_hits}/{len(still_missing)} found')
 
-    # ----- Phase 3: Scopus (only if API key provided) -----
+    # ----- Phase 4: Semantic Scholar (free, no key) -----
+    still_missing = [n for n in references
+                     if n not in abstracts and references[n].get('doi')]
+    if still_missing:
+        if verbose:
+            print(f'  Phase 4: Semantic Scholar ({len(still_missing)} remaining)...',
+                  end='', flush=True)
+        ss_hits = 0
+        for ref_num in still_missing:
+            abstract = _fetch_semantic_scholar(references[ref_num]['doi'])
+            if abstract and len(abstract) > 30:
+                abstracts[ref_num] = abstract
+                ss_hits += 1
+            time.sleep(1.0)  # public endpoint is rate-limited
+        if verbose:
+            print(f' {ss_hits}/{len(still_missing)} found')
+
+    # Identify what still needs Scopus
+    needs_scopus = [n for n in references
+                    if n not in abstracts and references[n].get('doi')]
+
+    # ----- Phase 5: Scopus (only if API key provided) -----
     if needs_scopus and scopus_api_key:
         if verbose:
-            print(f'  Phase 3: Scopus ({len(needs_scopus)} remaining)...', end='', flush=True)
+            print(f'  Phase 5: Scopus ({len(needs_scopus)} remaining)...', end='', flush=True)
         scopus_hits = 0
         for ref_num in needs_scopus:
             abstract = _fetch_scopus(references[ref_num]['doi'],
