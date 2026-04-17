@@ -1,8 +1,12 @@
-"""Match PDFs in a literature folder to numbered manuscript references and rename them.
+"""Match PDFs in a literature folder to numbered manuscript references by content.
 
 Public API:
     match_and_rename(literature_dir, references)
         -> (matched, unmatched, warnings)
+
+Matching is content-based: each PDF's first 3 pages are scanned for a DOI
+(matched exactly or by prefix against manuscript references) and a title
+(matched by fuzzy-ratio >= 0.75). Filenames are never changed.
 
 Dependencies: fitz (pymupdf), difflib, re, pathlib
 """
@@ -221,18 +225,24 @@ def _rename_pdf(old_path: Path, ref_key, references: dict, style: str = "vancouv
 # ---------------------------------------------------------------------------
 
 def match_and_rename(literature_dir, references, style="vancouver"):
-    """Match PDFs to manuscript references and rename them.
+    """Match PDFs to manuscript references by content. Does NOT rename files.
 
     Args:
         literature_dir: Path (or str) to folder containing PDFs.
         references: dict ``{ref_key: {ref, doi, title, authors, year, journal}}``.
             Keys are int (Vancouver) or str cite_keys (APA).
-        style: 'vancouver' or 'apa'. Controls naming convention.
+        style: kept for backward compatibility; unused (matching is content-based).
 
     Returns:
-        matched: dict ``{ref_key: Path}`` -- matched PDFs (after rename).
+        matched: dict ``{ref_key: Path}`` -- matched PDFs at their existing paths.
         unmatched: list of ``{path, extracted_title, extracted_doi}`` -- couldn't match.
         warnings: list of str -- issues encountered.
+
+    Notes:
+        - Filenames are preserved. The function name is kept for API stability.
+        - Matching strategy per PDF: (1) extract DOI from metadata or first 3
+          pages; (2) extract title from metadata or first-page heuristic;
+          (3) match DOI exact / prefix, else fuzzy title match (ratio >= 0.75).
     """
     literature_dir = Path(literature_dir)
     matched = {}
@@ -243,32 +253,10 @@ def match_and_rename(literature_dir, references, style="vancouver"):
         warnings.append(f"Literature directory not found: {literature_dir}")
         return matched, unmatched, warnings
 
-    # ------------------------------------------------------------------
-    # Step 1: Pick up files that are already named
-    # Vancouver: N_Author-Title.pdf    APA: Author-Year-Title.pdf
-    # ------------------------------------------------------------------
-    if style == "apa":
-        already = _scan_already_named_apa(literature_dir, references)
-    else:
-        already = _scan_already_named(literature_dir)
-    for key, path in already.items():
-        if key in references:
-            matched[key] = path
-        else:
-            warnings.append(
-                f"File '{path.name}' matches naming convention but no reference '{key}' exists"
-            )
-
-    matched_nums = set(matched.keys())
-
-    # ------------------------------------------------------------------
-    # Step 2: Build lookup structures from references
-    # ------------------------------------------------------------------
+    # Build lookup structures from references
     doi_to_num = {}
     title_to_num = {}
     for num, ref in references.items():
-        if num in matched_nums:
-            continue
         doi = (ref.get("doi") or "").strip().lower()
         if doi:
             doi_to_num[doi] = num
@@ -276,15 +264,8 @@ def match_and_rename(literature_dir, references, style="vancouver"):
         if title:
             title_to_num[title.lower()] = num
 
-    # ------------------------------------------------------------------
-    # Step 3: Process unnamed PDFs
-    # ------------------------------------------------------------------
-    unnamed_pdfs = [
-        p for p in sorted(literature_dir.glob("*.pdf"))
-        if not _ALREADY_NAMED_RE.match(p.name)
-    ]
-
-    for pdf_path in unnamed_pdfs:
+    # Process every PDF by content (no filename-based shortcuts)
+    for pdf_path in sorted(literature_dir.glob("*.pdf")):
         meta = _extract_pdf_metadata(pdf_path)
         pdf_doi = (_clean_doi(meta["doi"]).lower() if meta["doi"] else None)
         pdf_title = meta["title"]
@@ -321,16 +302,13 @@ def match_and_rename(literature_dir, references, style="vancouver"):
                     if v == ref_num:
                         del title_to_num[k]
                         break
-                # Also remove from doi_to_num if present
                 for k, v in list(doi_to_num.items()):
                     if v == ref_num:
                         del doi_to_num[k]
                         break
 
         if ref_num is not None:
-            new_path = _rename_pdf(pdf_path, ref_num, references, style=style)
-            matched[ref_num] = new_path
-            matched_nums.add(ref_num)
+            matched[ref_num] = pdf_path
         else:
             unmatched.append({
                 "path": pdf_path,

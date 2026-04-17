@@ -40,7 +40,7 @@ from generate_reference_viewer import generate_viewer
 ```
 
 - **Abstracts**: Built-in cascade (CrossRef → PubMed E-utilities → Scopus). No MCP calls needed.
-- **PDF matching**: Matches literature PDFs by DOI/title, renames to `N_Author-Title.pdf`.
+- **PDF matching**: Matches literature PDFs by content (DOI extracted from PDF metadata or first 3 pages; fuzzy title match). Filenames are preserved — the skill never renames PDFs.
 - **Snippet extraction**: Finds supporting passages from each PDF for each citation context.
 
 ### 4. Run AI verification
@@ -87,7 +87,7 @@ stats = generate_viewer(
 ### 6. Report results
 Report: total references, PDFs matched, abstracts fetched, verification summary (pass/warning/flag counts), output file path.
 
-**IMPORTANT**: The tool renames PDFs in the literature folder to `N_AuthorLastName-ShortTitle.pdf`. This is non-destructive (rename, not delete) but irreversible without git. Warn the user on first run.
+**Note**: PDF filenames are never changed. The matcher reads each PDF's content (DOI + title from the first 3 pages) and matches it to a manuscript reference regardless of what the file is called.
 
 ## Workflow: Address Comments
 
