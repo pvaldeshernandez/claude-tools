@@ -117,7 +117,19 @@ def classify_section(section_name):
 # 4. parse_references (Vancouver + APA)
 # ---------------------------------------------------------------------------
 
-_DOI_RE = re.compile(r'https?://doi\.org/(10\.\S+)')
+_DOI_RE = re.compile(r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*)(10\.\d{4,9}/\S+)', re.IGNORECASE)
+
+# Matches the end of a Vancouver author block. Captures the period that
+# terminates the last author's initials (e.g., "Smith AB, Jones CD. Title...")
+# Requires 1-4 uppercase letters followed by ". " to avoid false hits on
+# mid-title abbreviations like "U.S."
+_AUTHORS_END_RE = re.compile(r'\b[A-Z]{1,4}\.\s')
+
+
+def _find_authors_end(text):
+    """Return the index of the period that ends the author block, or -1."""
+    m = _AUTHORS_END_RE.search(text)
+    return (m.end() - 2) if m else -1
 _YEAR_RE = re.compile(r'\b(\d{4})\b')
 _JOURNAL_RE = re.compile(r'\*([^*]+)\*')
 
@@ -205,20 +217,41 @@ def _parse_references_vancouver(lines):
         text = m.group(2)
 
         doi_m = _DOI_RE.search(text)
-        doi = doi_m.group(1).rstrip('.') if doi_m else None
+        doi = doi_m.group(1).rstrip('.,;') if doi_m else None
 
         journal_m = _JOURNAL_RE.search(text)
         journal = journal_m.group(1) if journal_m else None
 
+        # Parse author block, title, and journal from plain-text Vancouver refs.
+        # Vancouver layout (authors end with a period after initials):
+        #   "Smith AB, Jones CD, Doe EF. Title of the article. Journal Abbrev. 2020;..."
+        # The authors block ends at the first ". " that follows an uppercase-initial
+        # token (e.g. "EF."). After that, the title runs until the next ". ".
+        author_end = _find_authors_end(text)
+        if author_end == -1:
+            # Fallback: first ". " anywhere
+            author_end = text.find('. ')
+
+        if author_end != -1:
+            raw_authors = text[:author_end]
+            rest = text[author_end + 2:]
+        else:
+            raw_authors = text
+            rest = ''
+
         title = None
-        first_dot_space = text.find('. ')
-        if first_dot_space != -1:
-            after_authors = text[first_dot_space + 2:]
-            first_star = after_authors.find('*')
+        if rest:
+            # First, try italic-journal marker (*Journal*)
+            first_star = rest.find('*')
             if first_star > 0:
-                title = after_authors[:first_star].strip().rstrip('.')
-            elif first_star == -1:
-                title = after_authors.strip().rstrip('.')
+                title = rest[:first_star].strip().rstrip('.')
+            else:
+                # Plain text: title ends at next ". " (before the journal name)
+                title_end = rest.find('. ')
+                if title_end != -1:
+                    title = rest[:title_end].strip().rstrip('.')
+                else:
+                    title = rest.strip().rstrip('.')
         if title is not None and title.startswith('*'):
             title = None
         if title is None and journal is not None:
@@ -230,11 +263,6 @@ def _parse_references_vancouver(lines):
             if 1800 <= candidate <= 2100:
                 year = candidate
                 break
-
-        if first_dot_space != -1:
-            raw_authors = text[:first_dot_space]
-        else:
-            raw_authors = text
         if ',' in raw_authors:
             first_author = raw_authors.split(',')[0].strip()
             authors = f'{first_author} et al.'
