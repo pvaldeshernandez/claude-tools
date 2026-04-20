@@ -22,6 +22,7 @@ Standard LLM audits catch (1) and (2) well. They miss (3) because they treat eac
 This skill runs a **two-pass audit** that catches all three:
 
 - **Pass 1** — sentence-level citation verification against PDFs.
+- **Pass 1.5** (optional) — SemanticCite second opinion on each Pass-1 claim.
 - **Pass 2** — argument-level integrity review that propagates Pass-1 corrections through the paragraph.
 
 ## When to Use This Skill
@@ -61,6 +62,85 @@ For each sentence in the manuscript section:
    - **UNVERIFIABLE** — PDF not available (flag explicitly).
 4. For each non-ACCURATE claim, quote the contradicting or missing PDF text.
 
+### Pass 1.5 — SemanticCite second opinion (optional)
+
+**Trigger:** only when the user asks for a second opinion or uses a flag
+like `--with-semanticcite`. Off by default.
+
+SemanticCite is an external tool (https://github.com/sebhaan/semanticcite)
+that runs its own retrieval-and-reranking pipeline over the PDF and
+returns an independent label on the same claim. It is a cross-check,
+not a replacement for Pass 1. Running both and comparing catches cases
+where either approach alone would miss an issue.
+
+**How to invoke** (per Pass-1 claim + cited PDF):
+
+```bash
+module load conda
+conda activate cite
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+python ~/.claude/skills/manuscript-citation-audit/scripts/semanticcite_backend.py \
+    --claim "<one-sentence claim from Pass 1>" \
+    --pdf   /path/to/cited_paper.pdf \
+    --out   /tmp/semanticcite_<ref_key>.json
+```
+
+The backend defaults to UF Navigator (`~/.navigator_key`, model
+`gpt-4.1-mini`). Override by setting `OPENAI_API_KEY` /
+`OPENAI_API_BASE` before calling, or pass `--model <model-name>`.
+
+First run on a fresh machine downloads ~550 MB (MPNet embeddings +
+FlashRank reranker); subsequent runs use the cache. Expect ~2–3 min per
+citation on `gpt-4.1-mini`.
+
+**Returned JSON schema:**
+
+```json
+{
+  "backend": "semanticcite",
+  "classification": "SUPPORTED | PARTIALLY_SUPPORTED | UNSUPPORTED | UNCERTAIN",
+  "confidence": 0.90,
+  "reasoning": "...",
+  "claim": "LLM-extracted core claim",
+  "evidence": [{"text": "...", "score": 0.999, "chunk_id": 114}, ...],
+  "runtime_sec": 194.7,
+  "model": "gpt-4.1-mini"
+}
+```
+
+**Merge with Pass 1 (stricter-wins):**
+
+| Pass 1 | SemanticCite | Merged verdict |
+|---|---|---|
+| ACCURATE | SUPPORTED | **ACCURATE** |
+| ACCURATE | PARTIALLY_SUPPORTED | **INCOMPLETE — check** (SemanticCite flagged gaps) |
+| ACCURATE | UNSUPPORTED | **CONFLICT — human review** |
+| ACCURATE | UNCERTAIN | ACCURATE (keep Pass 1) |
+| INCOMPLETE / MISLEADING | SUPPORTED | INCOMPLETE (Pass 1 wins, it caught context Pass 1.5 missed) |
+| INCOMPLETE / MISLEADING | PARTIALLY_SUPPORTED | **INCOMPLETE** (agree) |
+| INCOMPLETE / MISLEADING | UNSUPPORTED | **FALSE or INCOMPLETE — human review** |
+| MISATTRIBUTED | any | **MISATTRIBUTED** (Pass 1 dominates: SemanticCite cannot detect this) |
+| FALSE | UNSUPPORTED | **FALSE** (agree) |
+| FALSE | SUPPORTED | **CONFLICT — human review** |
+| UNVERIFIABLE | any | UNVERIFIABLE |
+
+General rule: when they disagree, pick the label closer to "flag for
+human review," and always show both verdicts in the output so the
+author sees why. Never silently drop a disagreement.
+
+**When to use Pass 1.5:**
+
+- High-stakes submissions (journal revision, grant).
+- Paragraphs the author thinks are borderline.
+- Spot-check sampling — run on a random 10–20% of references to audit
+  Pass 1's own reliability.
+
+**When NOT to use Pass 1.5:**
+
+- First-draft self-checks where speed matters.
+- Citations that are clearly single-factoid ("N = 188 participants (ref)")
+  — both backends will agree, and the cost isn't worth it.
+
 ### Pass 2 — Argument-level integrity review
 
 After Pass 1 completes, re-read the section as a whole. For each paragraph:
@@ -96,7 +176,7 @@ A single Markdown report containing:
 1. **Summary** — count of ACCURATE / MISATTRIBUTED / FALSE / INCOMPLETE / UNVERIFIABLE claims.
 2. **Confirmed errors to fix** — each with quoted sentence, PDF evidence, and proposed direction of fix (not the rewrite itself).
 3. **Pass-2 knock-on issues** — paragraphs where a Pass-1 fix invalidates a comparative/absence claim.
-4. **Reference-level verdict table** — one row per cited paper with verdict label.
+4. **Reference-level verdict table** — one row per cited paper with verdict label. If Pass 1.5 ran, include a **SemanticCite** column with its independent label, a **Merged** column with the stricter-wins verdict, and an explicit **AGREE/DISAGREE** flag. Cite disagreements at the top of the report so the author never misses them.
 5. **Unverifiable references** — PDFs missing; claims cannot be checked.
 
 Do NOT produce rewritten text inside the audit. Keep the audit as a flagging document so the author can decide how to fix each issue.
