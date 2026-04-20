@@ -76,6 +76,19 @@ After Pass 1 completes, re-read the section as a whole. For each paragraph:
 
 Deploy 2–3 independent agents with the same Pass 1 + Pass 2 prompt and compare their reports. When they disagree, re-verify the contested claim against the PDF manually. Areas where agents disagree are usually where the claim is genuinely borderline and the text needs to be tightened.
 
+### Pass 4 — Study-design terminology check
+
+Language must match the design of each cited study. The most common violations:
+
+- **"Reduction", "reduced", "decrease", "decreased", "increase", "increased", "loss", "atrophy"** — these terms imply longitudinal change (something got smaller or larger over time). They are correct only if the cited study has a longitudinal arm (baseline vs follow-up scans, or pre-vs-post treatment). For cross-sectional between-group comparisons the correct terms are **"smaller", "lower", "greater", "higher", "thinner", "thicker", "shallower"** (steady-state descriptors).
+- **"Reversed", "recovered", "normalized"** — strictly longitudinal. Cross-sectional studies cannot support these.
+- **"Progression", "progressed"** — implies a time course. Cross-sectional correlations with disease duration are *consistent with* progression but do not demonstrate it.
+- **"Predicted"** — implies prospective data. A cross-sectional correlation does not predict anything.
+
+For each cited study flagged in Pass 1, verify its design (cross-sectional vs longitudinal vs mixed) by reading the Methods section. Then scan the manuscript's paraphrase of that study for design-mismatched verbs. Flag each mismatch and propose the correct steady-state alternative.
+
+Exception: if the cited paper's own abstract uses a longitudinal-implying word loosely to describe a cross-sectional finding, the manuscript may legitimately mirror the paper's wording — but flag it as inherited imprecision so the author can decide.
+
 ## Output Format
 
 A single Markdown report containing:
@@ -107,6 +120,7 @@ If a paragraph contains any of these patterns, trigger this skill:
 - "This is the first..." — always verify against the full literature.
 - Heavy meta-analytic framing (e.g., "X% of studies report...").
 - Citation pooling of 3+ papers for a single claim (e.g., "[5,7,12,18,22]").
+- Longitudinal-implying verbs ("reduction", "decreased", "progression", "predicted", "reversed") applied to cross-sectional findings.
 
 ## See Also
 
