@@ -50,7 +50,19 @@ Do NOT use this skill when:
 
 ### Pass 1 — Sentence-level citation verification
 
-For each sentence in the manuscript section:
+**Granularity rule (default, unless user overrides):** walk the section
+**sequentially, statement by statement, in document order**. A
+"statement" is a claim-bearing unit that references the literature —
+typically one sentence, but split a sentence into multiple statements
+if it makes several independently-citable claims (e.g., "Makary 2020
+showed reduced NAcc volume (26), increased NAcc–ACC connectivity (26),
+and loss of low-frequency fluctuations (26)" = three statements).
+**Skip any sentence that does not cite or depend on the literature**
+(pure methods descriptions, internal results, equation statements,
+transitions). This matches the fine-grained approach used for the
+Introduction and Discussion audits.
+
+For each statement:
 
 1. Identify every claim that depends on a citation. A claim depends on a citation if (a) a citation appears in or near the sentence, OR (b) the sentence continues an argument anchored to a citation earlier in the paragraph.
 2. For each such claim, open the cited PDF (convert with markitdown if needed) and read the **Abstract, Methods, and Results at minimum**. Do NOT rely on cached knowledge of the paper.
