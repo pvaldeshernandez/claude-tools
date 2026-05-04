@@ -52,9 +52,9 @@ These defaults apply when the user invokes this skill without overrides. They re
 
 ### Backend default = Claude only
 
-**Run Pass 1 (Claude reads each cited PDF directly) and Pass 4 (study-design terminology check) by default. Do NOT run Pass 1.5 (SemanticCite) unless the user explicitly opts in.**
+**Run Pass 1 (Claude reads each cited PDF directly) and Pass 4 (study-design terminology check) by default. Do NOT run Pass 1.5 (SemanticCite) unless the user explicitly opts in AND has explicitly acknowledged the cost on this turn.**
 
-Opt-in triggers — only run Pass 1.5 if the user uses one of these:
+Opt-in triggers — these phrases tell you the user is *asking for* SemanticCite:
 
 - "with SemanticCite" / "use SemanticCite"
 - "second opinion" / "cross-check"
@@ -62,9 +62,15 @@ Opt-in triggers — only run Pass 1.5 if the user uses one of these:
 - `--with-semanticcite` flag
 - Anything that explicitly names SemanticCite or asks for an independent second labeling
 
-Why: SemanticCite is slow (~2–3 min per claim-PDF pair) and relies on an external Conda environment that may not be ready on every machine. The Claude-only audit is fast and sufficient for first-pass and routine checks.
+**Mandatory cost confirmation gate.** Even when the user asks for SemanticCite, do NOT dispatch the SemanticCite agent until you have asked a hard, single-turn confirmation question that explicitly reminds them they will be charged for UF Navigator use, e.g.:
 
-When SemanticCite is requested, deploy two parallel agents (one Claude, one SemanticCite) — not a single agent that runs both — and merge results in the assistant context using the stricter-wins table in Pass 1.5. This is the deployment Pedro prefers when both backends are wanted.
+> *"SemanticCite uses GPT-4.1-mini via UF Navigator (~2–3 min per claim-PDF pair, ~N claims here). This will charge against Pedro's UF Navigator account. Confirm you want to proceed?"*
+
+If the user does not respond with an explicit "yes/proceed/confirmed" on the same turn, do not run it. A general "let's audit this" request does NOT count as cost acknowledgment, even if "with SemanticCite" was said earlier in the conversation. Re-confirm each time. This rule is non-negotiable: SemanticCite's UF Navigator usage is billed and Pedro wants every invocation to be a deliberate, cost-aware decision.
+
+Why: SemanticCite is slow (~2–3 min per claim-PDF pair), relies on an external Conda environment, and — most importantly — incurs metered cost via UF Navigator (LLM API calls per claim-PDF pair). The Claude-only audit is fast, free at the per-invocation level, and sufficient for first-pass and routine checks.
+
+When SemanticCite is approved (after the cost gate), deploy two parallel agents (one Claude, one SemanticCite) — not a single agent that runs both — and merge results in the assistant context using the stricter-wins table in Pass 1.5. This is the deployment Pedro prefers when both backends are wanted.
 
 ### Scope default = literal section name
 
@@ -113,6 +119,15 @@ For each statement:
 
 **Trigger:** only when the user asks for a second opinion or uses a flag
 like `--with-semanticcite`. Off by default.
+
+**⚠️ COST GATE (mandatory).** SemanticCite calls `gpt-4.1-mini` via UF
+Navigator, which charges Pedro's UF Navigator account per call. Before
+running Pass 1.5 you MUST ask a same-turn confirmation question that
+explicitly reminds the user of this cost (see "Defaults and Invocation"
+above for the wording). A previously-said "with SemanticCite" does not
+constitute cost acknowledgment for a new invocation — confirm on the
+turn that triggers the run. Skip Pass 1.5 if the user does not
+explicitly confirm.
 
 SemanticCite is an external tool (https://github.com/sebhaan/semanticcite)
 that runs its own retrieval-and-reranking pipeline over the PDF and
