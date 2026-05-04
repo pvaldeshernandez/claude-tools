@@ -46,6 +46,41 @@ Do NOT use this skill when:
 - **PDF folder** — path containing every cited paper as a PDF. Flag any missing PDFs upfront.
 - **Scope instructions** (optional) — e.g., "only the Discussion", or "skip the Methods".
 
+## Defaults and Invocation
+
+These defaults apply when the user invokes this skill without overrides. They reflect Pedro's standing preferences and are documented here so a fresh-context session does not have to re-derive them.
+
+### Backend default = Claude only
+
+**Run Pass 1 (Claude reads each cited PDF directly) and Pass 4 (study-design terminology check) by default. Do NOT run Pass 1.5 (SemanticCite) unless the user explicitly opts in.**
+
+Opt-in triggers — only run Pass 1.5 if the user uses one of these:
+
+- "with SemanticCite" / "use SemanticCite"
+- "second opinion" / "cross-check"
+- "two backends" / "both backends" / "two parallel agents"
+- `--with-semanticcite` flag
+- Anything that explicitly names SemanticCite or asks for an independent second labeling
+
+Why: SemanticCite is slow (~2–3 min per claim-PDF pair) and relies on an external Conda environment that may not be ready on every machine. The Claude-only audit is fast and sufficient for first-pass and routine checks.
+
+When SemanticCite is requested, deploy two parallel agents (one Claude, one SemanticCite) — not a single agent that runs both — and merge results in the assistant context using the stricter-wins table in Pass 1.5. This is the deployment Pedro prefers when both backends are wanted.
+
+### Scope default = literal section name
+
+**Audit the literal section the user names, in full.** No auto-narrowing.
+
+- "audit the Discussion" → entire Discussion section (every subsection).
+- "audit the Methods" → entire Methods section.
+- "audit the Lateralization subsection" → only that subsection.
+- "audit what we just wrote" / "audit the new section" → only the recently added content.
+
+Do not assume the user means "just the new paragraph I added" when they say "Discussion." If the section is large and the user may have meant a subset, ASK before dispatching — do not silently scope down.
+
+### Pass 2 and Pass 4
+
+Always run by default — they are part of the standard audit, not opt-in. Pass 3 (multi-agent reconciliation) is opt-in and triggered the same way as Pass 1.5.
+
 ## Method
 
 ### Pass 1 — Sentence-level citation verification
