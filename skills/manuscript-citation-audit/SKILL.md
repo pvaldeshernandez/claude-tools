@@ -280,7 +280,11 @@ The audit produces a single paper-grouped Markdown report. The layout is fixed a
 
 ### 4. Per-paper sections, with issue-papers listed FIRST
 
-The body of the report is one section per cited paper. **Papers are ordered with issue-papers (≥ 1 INCOMPLETE/MISLEADING / MISATTRIBUTED / FALSE / UNVERIFIABLE claim) listed first**, followed by **a clear horizontal-rule separator (`---`) and a marker heading**, and then **all-ACCURATE papers**. Within each per-paper section, claims that triggered an issue are listed first (under an `## Issues` sub-heading), then a separator, then the paper's accurate claims (under `## ACCURATE claims`).
+The body of the report is one section per cited paper. **Papers are ordered with issue-papers listed first**, followed by **a clear horizontal-rule separator (`---`) and a marker heading**, and then **all-ACCURATE papers**.
+
+**Definition of an "issue-paper":** any paper with at least one claim whose verdict is **MISATTRIBUTED**, **FALSE**, **INCOMPLETE/MISLEADING**, or **UNVERIFIABLE** (e.g., PDF missing). UNVERIFIABLE counts as an issue, NOT as an accurate claim — the audit cannot vouch for the citation, so it belongs in the issues block where the user can decide what to do (locate the PDF, drop the citation, or replace with an accessible source). A paper with all claims either ACCURATE or BORDERLINE-acceptable is an all-ACCURATE paper. BORDERLINE on its own (e.g., a Pass-4 inherited-imprecision flag the skill explicitly accepts) does not promote a paper into the issues block; only verdicts requiring author action do.
+
+Within each per-paper section, claims that triggered an issue are listed first (under an `## Issues` sub-heading), then a separator, then the paper's accurate claims (under `## ACCURATE claims`).
 
 Example layout:
 
