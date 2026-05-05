@@ -83,9 +83,21 @@ When SemanticCite is approved (after the cost gate), deploy two parallel agents 
 
 Do not assume the user means "just the new paragraph I added" when they say "Discussion." If the section is large and the user may have meant a subset, ASK before dispatching — do not silently scope down.
 
-### Pass 2 and Pass 4
+### Pass 2, Pass 3, and Pass 4 — all run by default
 
-Always run by default — they are part of the standard audit, not opt-in. Pass 3 (multi-agent reconciliation) is opt-in and triggered the same way as Pass 1.5.
+**Pass 2 (argument-integrity / absence-claim search), Pass 3 (multi-agent reconciliation), and Pass 4 (study-design terminology) all run by default.** They are part of the standard audit. Only Pass 1.5 (SemanticCite) is opt-in.
+
+**Pass 3 default behavior** (unless the user opts out): dispatch **two parallel Claude agents** (general-purpose subagents), each running Pass 1 + Pass 2 + Pass 4 independently on the same scope. When both complete, the assistant reconciles disagreements by re-reading the contested PDFs directly, then merges the two reports into a single paper-grouped report (see "Output format" below).
+
+**Opt-out triggers — skip Pass 3 (single agent only):**
+
+- "single agent" / "one agent" / "no reconciliation" / "skip Pass 3"
+- "fast audit" / "first-pass check" / "quick check"
+- "just one pass" / "no need to cross-check"
+
+When Pass 3 is skipped, dispatch a single Claude agent (or do the audit inline if scope is very small), and the output is the same paper-grouped format with one verdict per claim instead of merged-from-two.
+
+**Why default-on:** Pass-3 reconciliation has repeatedly caught issues that single-agent audits missed (the Discussion audit on this project found that 4 of 5 flagged issues were caught by only one of two agents). The marginal runtime cost (~30–60 min wall-clock for two parallel agents on a typical Discussion section) is worth it for the reliability gain.
 
 ## Method
 
@@ -214,9 +226,20 @@ After Pass 1 completes, re-read the section as a whole. For each paragraph:
 3. Verify absence claims by **actively searching for counterexamples** across all PDFs in scope, not just the cited ones. Use grep on method keywords, region names, or finding types.
 4. Flag paragraphs where Pass-1 corrections propagate to weaken or invalidate other claims. This is the most important step and is what standard audits miss.
 
-### Pass 3 — Reconciliation (optional, recommended for high-stakes submissions)
+### Pass 3 — Multi-agent reconciliation (default; opt-out only)
 
-Deploy 2–3 independent agents with the same Pass 1 + Pass 2 prompt and compare their reports. When they disagree, re-verify the contested claim against the PDF manually. Areas where agents disagree are usually where the claim is genuinely borderline and the text needs to be tightened.
+**Default behavior** (unless the user opts out, see "Defaults and Invocation" above):
+
+1. Dispatch **two parallel Claude general-purpose subagents**. Each runs Pass 1 + Pass 2 + Pass 4 independently on the same scope. Each writes its own report to `citation_audit_<section>_pass3_agentA.md` / `..._agentB.md`.
+2. The dispatch prompt for each agent must include the line: *"keep tool result payloads small; read PDFs incrementally with offset/limit on Read, or pipe markitdown through head/grep — a previous run failed with 'Request too large (max 32MB)' from loading full long PDFs into single tool results."* This guards against the size-limit failure mode that has occurred in practice.
+3. When both complete, the assistant reconciles disagreements by **re-reading the contested PDFs directly** (not by re-prompting an agent). For each claim where the two agents disagree, the assistant fetches the PDF passage, decides which agent was right, and records the merged verdict.
+4. The merged report is written in the paper-grouped format described in "Output Format" below. Per-agent reports stay on disk as provenance.
+
+**Why default-on:** in practice (Discussion audit on this project), 4 of 5 flagged issues were caught by only one of the two agents — running a single audit would have missed most of them. The runtime cost (~30–60 min wall-clock for two parallel agents on a Discussion-sized section) is worth it.
+
+**Failure handling:** if one agent fails (e.g., 32 MB tool-result limit), do NOT silently fall back to the other agent's verdict. Treat the surviving agent's report plus the assistant's PDF-level reconciliation as the audit, but mark the failure in the merged report's "Multi-agent merge metadata" footer so the user knows reconciliation was 1-of-2 not 2-of-2.
+
+**Opt-out path** (single agent): the user must use one of the opt-out triggers documented in "Defaults and Invocation". When opting out, skip the parallel-dispatch step and run a single Claude audit inline (or in one subagent if scope is large). The output format is otherwise identical.
 
 ### Pass 4 — Study-design terminology check
 
@@ -233,15 +256,96 @@ Exception: if the cited paper's own abstract uses a longitudinal-implying word l
 
 ## Output Format
 
-A single Markdown report containing:
+The audit produces a single paper-grouped Markdown report. The layout is fixed and must be followed exactly so a fresh-context Claude in a future session can produce the same artifact without explanation.
 
-1. **Summary** — count of ACCURATE / MISATTRIBUTED / FALSE / INCOMPLETE / UNVERIFIABLE claims.
-2. **Confirmed errors to fix** — each with quoted sentence, PDF evidence, and proposed direction of fix (not the rewrite itself).
-3. **Pass-2 knock-on issues** — paragraphs where a Pass-1 fix invalidates a comparative/absence claim.
-4. **Reference-level verdict table** — one row per cited paper with verdict label. If Pass 1.5 ran, include a **SemanticCite** column with its independent label, a **Merged** column with the stricter-wins verdict, and an explicit **AGREE/DISAGREE** flag. Cite disagreements at the top of the report so the author never misses them.
-5. **Unverifiable references** — PDFs missing; claims cannot be checked.
+**File path convention:** `<manuscript_dir>/citation_audit_<section>_by_paper.md` (e.g., `citation_audit_discussion_by_paper.md`, `citation_audit_introduction_by_paper.md`).
 
-Do NOT produce rewritten text inside the audit. Keep the audit as a flagging document so the author can decide how to fix each issue.
+**Structure of the report, top to bottom:**
+
+### 1. Header
+
+- Manuscript path, section audited, backend (Claude only or Claude + SemanticCite), Pass 3 status (single-agent or multi-agent reconciled), PDF folder path, count of cited PDFs found vs missing.
+
+### 2. Executive summary
+
+- One-sentence finding count: e.g., *"Audited N claims across M papers; X papers flagged with at least one issue, Y papers ACCURATE on every claim."*
+- A small "verdict-by-paper" table: paper | times cited | final verdict (or, in multi-agent mode, agreement/disagreement state).
+- One-line Pass-2 status (absence/novelty claims hold? or which broke).
+- One-line Pass-4 status (clean? or which terms flagged).
+
+### 3. Recommended fix priority
+
+- Numbered list of the issues that need an action, ordered by severity (FALSE > MISATTRIBUTED > INCOMPLETE/MISLEADING > BORDERLINE).
+- Each entry: paper name + one-sentence summary of the issue + one-sentence fix direction.
+
+### 4. Per-paper sections, with issue-papers listed FIRST
+
+The body of the report is one section per cited paper. **Papers are ordered with issue-papers (≥ 1 INCOMPLETE/MISLEADING / MISATTRIBUTED / FALSE / UNVERIFIABLE claim) listed first**, followed by **a clear horizontal-rule separator (`---`) and a marker heading**, and then **all-ACCURATE papers**. Within each per-paper section, claims that triggered an issue are listed first (under an `## Issues` sub-heading), then a separator, then the paper's accurate claims (under `## ACCURATE claims`).
+
+Example layout:
+
+```markdown
+# Wang et al., 2017 ★ ISSUES
+
+**PDF:** `Wang-...pdf`
+**Cohort/method:** [one-line summary]
+**Final verdict:** INCOMPLETE/MISLEADING
+
+## Issues
+
+### Claim — [subsection in manuscript]
+> "Verbatim sentence."
+**Verdict:** INCOMPLETE/MISLEADING
+**Why:** [1–3 sentences with PDF evidence quoted]
+**Fix direction:** [one sentence — not the rewrite]
+
+## ACCURATE claims
+
+### Claim — [subsection]
+> "Verbatim sentence."
+**Verdict:** ACCURATE
+**Why:** [1–2 sentences with PDF evidence quoted]
+```
+
+After all issue-papers, insert a clear separator before the all-ACCURATE block:
+
+```markdown
+---
+
+# Papers with all-ACCURATE claims
+
+# DeSouza et al., 2013
+
+**PDF:** `DeSouza-...pdf`
+**Cohort/method:** [one-line]
+**Final verdict:** ACCURATE
+
+### Claim — [subsection]
+> "Verbatim sentence."
+**Verdict:** ACCURATE
+**Why:** ...
+```
+
+(All-ACCURATE papers do not need an `## Issues` sub-heading; just list the claims directly under the paper header.)
+
+### 5. Pass-2 absence/novelty claims
+
+Final section. Lists every claim that has no citation but makes an absence or comparative argument ("no prior study...", "first to...", "consistent with...", "unlike..."). Each entry: verbatim claim + verdict (HOLDS / BROKE) + justification (which PDFs were searched, what the closest neighbor was, whether any counterexample was found).
+
+### 6. Pass-4 design-terminology check
+
+Final section. Lists every flagged longitudinal-implying verb applied to a cross-sectional study, with the cited paper's design and a recommended steady-state replacement. Omit if clean (mention "Pass 4 clean" in the executive summary instead).
+
+### 7. Multi-agent merge metadata (Pass 3 default)
+
+Brief footer noting which agents ran and where their per-agent reports live (e.g., `citation_audit_<section>_pass3_agentA.md`, `..._agentB.md`). If they disagreed, list the contested claims and which agent the reconciler sided with after re-reading the PDF.
+
+**Forbidden in the report:**
+
+- Do NOT produce rewritten manuscript text. The audit is a flagging document.
+- Do NOT cluster issue-papers and accurate-papers in document order; the issues-first ordering is mandatory.
+- Do NOT collapse the per-paper sections into a single subsection-grouped chronological list. The grouping is by cited paper, not by manuscript subsection. Each claim names its manuscript subsection inside the claim block, not as the top-level grouping.
+- Do NOT include the SemanticCite cost-confirmation conversation inside the report; the report only shows verdicts.
 
 ## Key Principles
 
