@@ -297,7 +297,7 @@ Example layout:
 > "Verbatim sentence."
 **Verdict:** INCOMPLETE/MISLEADING
 **Why:** [1–3 sentences with PDF evidence quoted]
-**Fix direction:** [one sentence — not the rewrite]
+**Fix:** [a concrete proposed edit, not a vague direction. Show the old text and the new text in find/replace style, OR write the new sentence in full so the user can paste it. Examples below.]
 
 ## ACCURATE claims
 
@@ -327,6 +327,34 @@ After all issue-papers, insert a clear separator before the all-ACCURATE block:
 ```
 
 (All-ACCURATE papers do not need an `## Issues` sub-heading; just list the claims directly under the paper header.)
+
+#### What counts as a concrete `Fix:`
+
+Every flagged claim must propose a *specific edit*, not a generic recommendation. Three formats are acceptable:
+
+1. **Find/replace** — when the fix is a localized substring change, show the exact strings:
+
+   ```
+   **Fix:** In paragraph N, replace
+   > "right-hemisphere predominance of structural change has been reported"
+   with
+   > "the largest cluster of reduced gray-matter volume was right-hemisphere"
+   ```
+
+2. **Full sentence rewrite** — when the fix needs sentence-level restructuring, write the new sentence in full so the user can paste it directly:
+
+   ```
+   **Fix:** Replace the Pashkov sentence at the end of paragraph 3 with:
+   > "Pashkov et al. (2025) reported a count divergence between left- and right-pain subgroups in significant thalamic nuclei from controls, but their direct between-pain-side test was null (Pashkov et al., 2025)."
+   ```
+
+3. **Action + concrete content** — when the fix is structural (drop a citation, move a clause, split a sentence):
+
+   ```
+   **Fix:** Remove "Hashmi et al., 2013" from the citation list at the end of the corticostriatal sentence. The remaining citation (Baliki et al., 2012) supports the NAc-centered claim directly. If the broader chronification-shift framing is still wanted, cite Hashmi separately in a new sentence: "A complementary longitudinal study found that chronification shifts brain activity from nociceptive to emotional circuits (Hashmi et al., 2013)."
+   ```
+
+Generic phrasings like "consider rewording," "tighten the wording," or "soften this claim" are NOT acceptable as `Fix:` entries — they push the writing work back onto the author and defeat the point of the audit. If the audit cannot propose a concrete fix (e.g., the right rephrasing depends on a literature search the author still needs to do), say so explicitly: `**Fix:** Cannot be proposed without [specific information]; flag for author judgment.`
 
 ### 5. Pass-2 absence/novelty claims
 
