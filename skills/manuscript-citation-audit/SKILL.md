@@ -332,33 +332,43 @@ After all issue-papers, insert a clear separator before the all-ACCURATE block:
 
 (All-ACCURATE papers do not need an `## Issues` sub-heading; just list the claims directly under the paper header.)
 
-#### What counts as a concrete `Fix:`
+#### What counts as a concrete `Fix:` — required step-by-step layout
 
-Every flagged claim must propose a *specific edit*, not a generic recommendation. Three formats are acceptable:
+Every flagged claim must propose a *specific edit*, not a generic recommendation, and **must use the three-step anchoring layout below** so the user can locate and apply the edit without re-reading the manuscript:
 
-1. **Find/replace** — when the fix is a localized substring change, show the exact strings:
+> **Fix.**
+>
+> *Step 1 — Find this paragraph in the [Section name].* [One sentence describing the paragraph by its opening words or its position, e.g., "It is the second paragraph (the 'Structural neuroimaging studies' paragraph), which opens with *'Structural neuroimaging studies, conducted almost exclusively...'*"]
+>
+> *Step 2 — Within that paragraph, find this sentence* [or "find this clause" / "find this citation list"]:
+>
+> > "Verbatim source text from the manuscript."
+>
+> *Step 3 — Replace it with:*
+>
+> > "Verbatim replacement text."
+>
+> [One short paragraph explaining what changed and why, so the user understands the edit before applying it.]
 
-   ```
-   **Fix:** In paragraph N, replace
-   > "right-hemisphere predominance of structural change has been reported"
-   with
-   > "the largest cluster of reduced gray-matter volume was right-hemisphere"
-   ```
+This layout is mandatory. The reason for the three-step structure: a fix that just gives the new text without anchoring is useless — the user cannot locate where to apply it. Step 1 anchors the paragraph (so the user finds the right place in a long section), Step 2 quotes the exact source text (so Word's Find or copy/paste both work), Step 3 gives the replacement, and the closing explanation justifies the edit. Skip none of the steps.
 
-2. **Full sentence rewrite** — when the fix needs sentence-level restructuring, write the new sentence in full so the user can paste it directly:
+**Three edit types** to choose from at Step 3, depending on the fix:
 
-   ```
-   **Fix:** Replace the Pashkov sentence at the end of paragraph 3 with:
-   > "Pashkov et al. (2025) reported a count divergence between left- and right-pain subgroups in significant thalamic nuclei from controls, but their direct between-pain-side test was null (Pashkov et al., 2025)."
-   ```
+1. **Find/replace** — for localized substring changes. Steps 2 and 3 each quote a sentence; the replacement is a substitution.
 
-3. **Action + concrete content** — when the fix is structural (drop a citation, move a clause, split a sentence):
+2. **Drop or insert** — for structural fixes (drop a citation, drop a clause, insert a new sentence). Step 2 quotes the existing sentence; Step 3 quotes the same sentence with the citation/clause removed, or quotes the unchanged sentence followed by the new sentence to insert. Always show the *full* surrounding sentence so the user knows the boundary, even when only one citation token changes.
 
-   ```
-   **Fix:** Remove "Hashmi et al., 2013" from the citation list at the end of the corticostriatal sentence. The remaining citation (Baliki et al., 2012) supports the NAc-centered claim directly. If the broader chronification-shift framing is still wanted, cite Hashmi separately in a new sentence: "A complementary longitudinal study found that chronification shifts brain activity from nociceptive to emotional circuits (Hashmi et al., 2013)."
-   ```
+3. **Multi-sentence rewrite** — for fixes that span more than one sentence. Step 2 quotes the consecutive sentences; Step 3 quotes the rewritten block. Do not quote individual sentences separately if the fix only makes sense as a block.
 
-Generic phrasings like "consider rewording," "tighten the wording," or "soften this claim" are NOT acceptable as `Fix:` entries — they push the writing work back onto the author and defeat the point of the audit. If the audit cannot propose a concrete fix (e.g., the right rephrasing depends on a literature search the author still needs to do), say so explicitly: `**Fix:** Cannot be proposed without [specific information]; flag for author judgment.`
+When the surrounding paragraph contains other Mendeley citations that survive the edit, **preserve them verbatim in the replacement text** — both the bracketed `(Author, YYYY)` token and its surrounding punctuation. The user reapplies Mendeley to convert back to numeric superscripts after pasting; if you drop or rewrite a citation token, that change must be intentional and explained in the closing paragraph.
+
+**Forbidden phrasings.** Generic recommendations like "consider rewording," "tighten the wording," "soften this claim," or "rephrase to mirror what the source says" are NOT acceptable as `Fix:` entries — they push the writing work back onto the author and defeat the point of the audit. The user should be able to copy Step 2 into Word's Find dialog, paste Step 3 as the Replace text, and be done.
+
+**When a concrete fix cannot be proposed** (e.g., the right rephrasing depends on a literature search the author still needs to do, or on access to a missing PDF), say so explicitly:
+
+> **Fix.** Cannot be proposed without [specific information, e.g., "the Craig 2003 PDF" or "the author's preferred framing of subtype severity"]; flag for author judgment.
+
+Even in this case, do not fall back to vague advice — name precisely what is missing.
 
 ### 5. Pass-2 absence/novelty claims
 
